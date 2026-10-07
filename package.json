@@ -1,0 +1,63 @@
+{
+  "name": "ereaderplus",
+  "productName": "eReaderPlus",
+  "version": "0.1.0",
+  "homepage": "https://github.com/cheidru/eReaderPlus",
+  "description": "Ebook reader rendering books with an up-to-date Chromium engine",
+  "private": true,
+  "type": "module",
+  "main": "dist/electron/main.cjs",
+  "scripts": {
+    "build:inject": "node scripts/build-inject.mjs",
+    "build:electron": "node scripts/build-electron.mjs",
+    "build:web": "npm run build:inject && vite build",
+    "build": "npm run build:web && npm run build:electron",
+    "dev:desktop": "node scripts/dev-desktop.mjs",
+    "start:desktop": "npm run build && electron .",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "android:sync": "npm run build:web && cap sync android",
+    "android:run": "npm run android:sync && cap run android",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "samples": "node scripts/make-sample-books.mjs",
+    "test:e2e": "npm run build && npm run samples && node test/e2e/desktop.e2e.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/preferences": "^8.0.1",
+    "chmlib-ts": "^0.3.0",
+    "electron-updater": "^6.8.9",
+    "pdfjs-dist": "^6.4.299",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "yauzl": "^3.4.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/yauzl": "^3.4.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "fflate": "^0.8.3",
+    "gh-pages": "^6.3.0",
+    "jsdom": "^30.1.2",
+    "playwright": "^1.63.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "electron-winstaller@5.4.0": true
+  }
+}

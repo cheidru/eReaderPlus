@@ -1,0 +1,17 @@
+# Each Electron release ships a newer Chromium. Dependabot opens a PR for it; CI runs the unit and
+# end-to-end tests against the new engine before it is merged and released.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: daily
+    groups:
+      electron:
+        patterns: ["electron", "electron-builder", "electron-updater"]
+      capacitor:
+        patterns: ["@capacitor/*"]
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: weekly

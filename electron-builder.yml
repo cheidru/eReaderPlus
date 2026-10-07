@@ -1,0 +1,68 @@
+appId: com.ereaderplus.app
+productName: eReaderPlus
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/web/**
+  - dist/electron/**
+  - package.json
+  # main/preload are bundled by esbuild and the UI by Vite: no node_modules needed at runtime.
+  - "!**/node_modules/**"
+  - "!dist/electron/*.map"
+fileAssociations:
+  - ext: epub
+    name: EPUB book
+    mimeType: application/epub+zip
+    role: Viewer
+  - ext: fb2
+    name: FictionBook
+    mimeType: application/x-fictionbook+xml
+    role: Viewer
+  - ext: cbz
+    name: Comic book archive
+    mimeType: application/vnd.comicbook+zip
+    role: Viewer
+  - ext: [mobi, azw]
+    name: Mobipocket book
+    mimeType: application/x-mobipocket-ebook
+    role: Viewer
+  - ext: azw3
+    name: Kindle book
+    mimeType: application/vnd.amazon.mobi8-ebook
+    role: Viewer
+  - ext: [djvu, djv]
+    name: DjVu document
+    mimeType: image/vnd.djvu
+    role: Viewer
+  - ext: pdf
+    name: PDF document
+    mimeType: application/pdf
+    role: Viewer
+  - ext: chm
+    name: Compiled HTML Help
+    mimeType: application/vnd.ms-htmlhelp
+    role: Viewer
+  - ext: lit
+    name: Microsoft Reader book
+    mimeType: application/x-ms-reader
+    role: Viewer
+win:
+  target: nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+mac:
+  target: dmg
+  category: public.app-category.books
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Office
+# Auto-update: fill in the GitHub repository that hosts releases, then
+# `electron-builder --publish always` uploads installers + latest*.yml for electron-updater.
+# publish:
+#   provider: github
+#   owner: YOUR_GITHUB_USER
+#   repo: eReaderPlus

@@ -1,0 +1,122 @@
+/* Injected into every book document. Rules are scoped to classes set by paginator.js,
+   so a document opened outside the reader renders exactly as published. */
+
+html.ereader-pending {
+  visibility: hidden;
+}
+
+/* Pinches reach the paginator (font size, or zooming a fixed page) instead of zooming the browser view. */
+html:is(.ereader-paginated, .ereader-scrolled) {
+  touch-action: pan-x pan-y !important;
+}
+
+/* The paginator pans zoomed fixed pages itself. */
+html.ereader-fixed {
+  touch-action: none !important;
+}
+
+/* --- Paginated: CSS multi-column, one column per viewport; page turn = horizontal scroll --- */
+
+html.ereader-paginated {
+  --ereader-margin-block: max(24px, calc(var(--ereader-margin) * 0.75));
+  box-sizing: border-box !important;
+  height: 100vh !important;
+  max-height: none !important;
+  width: auto !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: var(--ereader-margin-block) var(--ereader-margin) !important;
+  overflow: hidden !important;
+  column-width: calc(100vw - 2 * var(--ereader-margin)) !important;
+  column-gap: calc(2 * var(--ereader-margin)) !important;
+  column-fill: auto !important;
+}
+
+html.ereader-paginated body {
+  margin: 0 !important;
+  max-width: none !important;
+  min-height: 0 !important;
+}
+
+html.ereader-paginated :is(img, svg, video, canvas, iframe, object, embed) {
+  max-width: 100% !important;
+  max-height: calc(100vh - 2 * var(--ereader-margin-block)) !important;
+  box-sizing: border-box;
+  object-fit: contain;
+  break-inside: avoid;
+}
+
+html.ereader-paginated :is(table, pre, figure) {
+  break-inside: avoid-column;
+}
+
+html.ereader-paginated :is(h1, h2, h3, h4, h5, h6) {
+  break-after: avoid;
+}
+
+/* --- Scrolled --- */
+
+html.ereader-scrolled {
+  box-sizing: border-box !important;
+  padding: 24px var(--ereader-margin) 48px !important;
+  overflow-x: hidden !important;
+}
+
+/* --- Fixed layout (pre-paginated EPUB, comics) --- */
+
+html.ereader-fixed {
+  overflow: hidden !important;
+}
+
+html.ereader-fixed.ereader-fixed-scaled {
+  width: var(--ereader-fixed-width) !important;
+  height: var(--ereader-fixed-height) !important;
+  transform-origin: 0 0;
+  transform: translate(var(--ereader-fixed-x), var(--ereader-fixed-y)) scale(var(--ereader-fixed-scale));
+}
+
+/* --- Typography overrides (off in "publisher layout" mode) --- */
+
+html.ereader-override:not(.ereader-fixed) {
+  font-size: calc(var(--ereader-font-scale) * 100%) !important;
+}
+
+html.ereader-custom-font body :where(:not(code, pre, kbd, samp, code *, pre *, svg, svg *, math, math *)) {
+  font-family: var(--ereader-font-family) !important;
+}
+
+html.ereader-custom-line-height body :where(p, li, dd, dt, blockquote, div, span, td, th) {
+  line-height: var(--ereader-line-height) !important;
+}
+
+/* --- Themes --- */
+
+html.ereader-override[data-ereader-theme='light'] {
+  background: #fff !important;
+  color: #1a1a1a;
+}
+
+html.ereader-override[data-ereader-theme='sepia'] {
+  background: #f4ecd8 !important;
+  color: #5b4636;
+}
+
+html.ereader-override[data-ereader-theme='dark'] {
+  background: #1c1c1e !important;
+  color: #dcdcdc;
+  color-scheme: dark;
+}
+
+html.ereader-override:is([data-ereader-theme='sepia'], [data-ereader-theme='dark']) body {
+  background: transparent !important;
+  color: inherit !important;
+}
+
+html.ereader-override[data-ereader-theme='dark'] body :where(p, span, div, li, dd, dt, h1, h2, h3, h4, h5, h6, td, th, blockquote, em, strong, i, b, small, sup, sub, section, article) {
+  color: inherit !important;
+  background-color: transparent !important;
+}
+
+html.ereader-override[data-ereader-theme='dark'] a:link {
+  color: #8ab4f8 !important;
+}

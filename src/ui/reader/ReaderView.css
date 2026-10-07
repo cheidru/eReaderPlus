@@ -1,0 +1,99 @@
+.reader {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  overflow: hidden;
+}
+
+/* With the bars hidden, the book itself must stay clear of notches and system bars. */
+.reader-immersive {
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
+
+.reader[data-theme='sepia'] {
+  background: #f4ecd8;
+}
+
+.reader[data-theme='dark'] {
+  background: #1c1c1e;
+}
+
+.reader-loading {
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+
+.reader-frame {
+  flex: 1;
+  min-height: 0;
+  width: calc(100% - var(--safe-left) - var(--safe-right));
+  margin: 0 var(--safe-right) 0 var(--safe-left);
+  border: none;
+  display: block;
+  background: transparent;
+  color-scheme: light;
+}
+
+/* Lets a dark book page show through transparently instead of on a white canvas. */
+.reader[data-theme='dark'] .reader-frame {
+  color-scheme: dark;
+}
+
+.reader-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.35rem calc(0.5rem + var(--safe-right)) 0.35rem calc(0.5rem + var(--safe-left));
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.reader-top {
+  order: -1;
+  padding-top: calc(0.35rem + var(--safe-top));
+  border-bottom: 1px solid var(--border);
+}
+
+.reader-bottom {
+  padding-bottom: calc(0.35rem + var(--safe-bottom));
+  border-top: 1px solid var(--border);
+}
+
+.reader-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reader-position {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  align-items: stretch;
+}
+
+.reader-chapter,
+.reader-numbers {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reader-slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
