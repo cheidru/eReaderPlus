@@ -1,0 +1,47 @@
+/* DjVu page documents: the page image fills the fixed-layout page box; the OCR text lies on top, invisible. */
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #fff;
+}
+
+body {
+  position: relative;
+  overflow: hidden;
+}
+
+canvas.djvu-page {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.djvu-text {
+  position: absolute;
+  inset: 0;
+}
+
+.djvu-text span {
+  position: absolute;
+  line-height: 1;
+  white-space: pre;
+  font-family: sans-serif;
+  color: transparent;
+  transform-origin: 0 0;
+  cursor: text;
+}
+
+.djvu-text span::selection {
+  background: rgb(0 90 255 / 0.3);
+}
+
+.djvu-error {
+  position: absolute;
+  inset: 40% 10% auto;
+  /* The page box is in page pixels (often 2500+ wide), so size text relative to it. */
+  font: calc(var(--ereader-fixed-height, 1000px) * 0.02) / 1.4 system-ui, sans-serif;
+  text-align: center;
+  color: #a00;
+}

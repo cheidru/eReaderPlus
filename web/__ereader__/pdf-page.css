@@ -1,0 +1,111 @@
+/* PDF page documents: the rendered page fills the fixed-layout page box (CSS px at 96 dpi); pdf.js's text
+   layer and the link layer lie on top in the same coordinates. Text layer rules follow pdf.js's pdf_viewer.css. */
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #fff;
+}
+
+body {
+  position: relative;
+  overflow: hidden;
+}
+
+canvas.pdf-page {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+:root {
+  /* The text layer is laid out at CSS_PX_PER_PT (96 / 72). */
+  --total-scale-factor: 1.3333333333;
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+}
+
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  text-align: initial;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.textLayer .markedContent {
+  display: contents;
+}
+
+.textLayer span[role='img'] {
+  user-select: none;
+  cursor: default;
+}
+
+.textLayer ::selection {
+  background: rgb(0 90 255 / 0.3);
+  color: transparent;
+}
+
+.textLayer br::selection {
+  background: transparent;
+}
+
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}
+
+.pdf-links {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pdf-links a {
+  position: absolute;
+  pointer-events: auto;
+  z-index: 2;
+}
+
+.pdf-error {
+  position: absolute;
+  inset: 40% 10% auto;
+  /* The page box is in page pixels, so size text relative to it. */
+  font: calc(var(--ereader-fixed-height, 1000px) * 0.02) / 1.4 system-ui, sans-serif;
+  text-align: center;
+  color: #a00;
+}
