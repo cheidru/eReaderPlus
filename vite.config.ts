@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react';
 // The same web build is loaded by Electron (app://) and packaged by Capacitor (android/).
 export default defineConfig({
   plugins: [react()],
-  base: '/https://github.com/cheidru/eReaderPlus/',
+  base: './',
   build: {
     outDir: 'dist/web',
     emptyOutDir: true,

@@ -5,6 +5,7 @@
 import type { BookFs } from './bookfs';
 import type { ParsedBook } from './epub';
 import { injectReader } from './inject';
+import { fb2Series } from './series';
 import type { SpineItem, TocItem } from './types';
 import { all, attr, child, children, escapeXml, first, parseXml, text } from './xml';
 
@@ -297,6 +298,7 @@ export async function importFb2(fs: BookFs, sourcePath: string): Promise<ParsedB
     authors,
     language: titleInfo ? text(child(titleInfo, 'lang')) : '',
     cover,
+    series: fb2Series(titleInfo),
     layout: 'reflowable',
     direction: 'ltr',
     spine,

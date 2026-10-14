@@ -1,6 +1,6 @@
 import { registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
-import { chromiumMajor, MIN_ENGINE_MAJOR, type FileRef, type Platform } from './platform';
+import { chromiumMajor, MIN_ENGINE_MAJOR, type FileRef, type FolderListing, type FoundBookFile, type Platform } from './platform';
 
 /** Native side: android/app/src/main/java/com/ereaderplus/app/BookStorePlugin.java */
 interface BookStorePlugin {
@@ -16,6 +16,10 @@ interface BookStorePlugin {
   deleteBook(options: { bookId: string }): Promise<void>;
   openExternal(options: { url: string }): Promise<void>;
   webViewInfo(): Promise<{ packageName: string; versionName: string; androidVersion: string }>;
+  hasFolderAccess(): Promise<{ granted: boolean }>;
+  requestFolderAccess(): Promise<{ granted: boolean }>;
+  listFolder(options: { path: string; extensions: string[] }): Promise<FolderListing>;
+  findBookFiles(options: { folder: string; extensions: string[] }): Promise<{ files: FoundBookFile[] }>;
 }
 
 export const BOOK_HOST_SUFFIX = 'ereaderplus.invalid';
@@ -83,5 +87,9 @@ export function createCapacitorPlatform(): Platform {
     openExternal: (url) => BookStore.openExternal({ url }),
     // Android WebView follows the system dark mode setting.
     setColorScheme: async () => {},
+    hasFolderAccess: async () => (await BookStore.hasFolderAccess()).granted,
+    requestFolderAccess: async () => (await BookStore.requestFolderAccess()).granted,
+    listFolder: (path, extensions) => BookStore.listFolder({ path, extensions }),
+    findBookFiles: async (folder, extensions) => (await BookStore.findBookFiles({ folder, extensions })).files,
   };
 }

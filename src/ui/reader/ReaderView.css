@@ -26,6 +26,7 @@
   display: grid;
   place-items: center;
   color: var(--text-muted);
+  background: var(--bg);
 }
 
 .reader-frame {
@@ -44,56 +45,228 @@
   color-scheme: dark;
 }
 
+/* --- ReadEra-style bars: teal, above and below the page --- */
+
 .reader-bar {
+  flex: none;
+  background: var(--bar);
+  color: var(--bar-text);
+  padding-left: calc(0.25rem + var(--safe-left));
+  padding-right: calc(0.25rem + var(--safe-right));
+}
+
+.reader-top {
+  position: relative;
+  order: -1;
+  padding-top: var(--safe-top);
+  padding-bottom: 0.6rem;
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.25);
+  z-index: 1;
+}
+
+.reader-toolbar {
+  display: flex;
+  align-items: center;
+  min-height: 3.25rem;
+}
+
+.reader-toolbar-space {
+  flex: 1;
+}
+
+.reader-heading {
+  display: flex;
+  flex-direction: column;
+  padding: 0 0.75rem;
+  min-width: 0;
+}
+
+.reader-title {
+  font-size: 1.15rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reader-subtitle {
+  font-size: 0.9rem;
+  color: var(--bar-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* On short windows (landscape phones, small desktop windows) keep the page as tall as possible. */
+@media (max-height: 34rem) {
+  .reader-toolbar {
+    min-height: 2.75rem;
+  }
+
+  .reader-heading {
+    position: absolute;
+    top: var(--safe-top);
+    left: calc(3.25rem + var(--safe-left));
+    right: calc(6.5rem + var(--safe-right));
+    height: 2.75rem;
+    justify-content: center;
+  }
+
+  .reader-top {
+    padding-bottom: 0;
+  }
+
+  .reader-subtitle {
+    display: none;
+  }
+}
+
+/* Stepping through search results, just under the top bar. */
+.reader-searchbar {
+  order: -1;
   flex: none;
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.35rem calc(0.5rem + var(--safe-right)) 0.35rem calc(0.5rem + var(--safe-left));
-  background: var(--surface-raised);
-  color: var(--text);
+  padding: 0 calc(0.25rem + var(--safe-right)) 0 calc(0.25rem + var(--safe-left));
+  background: color-mix(in srgb, var(--bar) 82%, black);
+  color: var(--bar-text);
 }
 
-.reader-top {
-  order: -1;
-  padding-top: calc(0.35rem + var(--safe-top));
-  border-bottom: 1px solid var(--border);
-}
-
-.reader-bottom {
-  padding-bottom: calc(0.35rem + var(--safe-bottom));
-  border-top: 1px solid var(--border);
-}
-
-.reader-title {
-  flex: 1;
-  min-width: 0;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.reader-position {
+.reader-searchbar-label {
+  appearance: none;
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  align-items: stretch;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.5rem;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }
 
-.reader-chapter,
+.reader-searchbar-query {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--bar-muted);
+}
+
+.reader-bottom {
+  position: relative;
+  padding-top: 0.25rem;
+  padding-bottom: calc(0.5rem + var(--safe-bottom));
+  box-shadow: 0 -2px 4px rgb(0 0 0 / 0.2);
+  z-index: 1;
+}
+
+.reader-numbers-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .reader-numbers {
-  font-size: 0.8rem;
-  color: var(--text-muted);
+  flex: 1;
+  min-width: 0;
   text-align: center;
+  font-size: 1.05rem;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.reader-slider-wrap {
+  position: relative;
+  margin: 0 0.75rem;
+}
+
+/* Chapter starts, as ticks on the slider track. Inset by the thumb radius to line up with the track. */
+.reader-marks {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 50%;
+  height: 0;
+  pointer-events: none;
+}
+
+.reader-mark {
+  position: absolute;
+  top: -5px;
+  width: 1px;
+  height: 10px;
+  background: rgb(255 255 255 / 0.45);
+}
+
 .reader-slider {
+  --fill: 0%;
+  --track: #4fc3f7;
+  position: relative;
+  display: block;
   width: 100%;
-  accent-color: var(--accent);
+  height: 1.75rem;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.reader-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--track) var(--fill), rgb(255 255 255 / 0.3) var(--fill));
+}
+
+.reader-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6.5px;
+  border-radius: 50%;
+  background: var(--track);
+  box-shadow: 0 0 0 4px rgb(79 195 247 / 0.2);
+}
+
+.reader-slider::-moz-range-track {
+  height: 3px;
+  background: rgb(255 255 255 / 0.3);
+}
+
+.reader-slider::-moz-range-progress {
+  height: 3px;
+  background: var(--track);
+}
+
+.reader-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--track);
+}
+
+/* The page number shown under the text while the bars are hidden. */
+.reader-folio {
+  flex: none;
+  height: 1.6rem;
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  color: #8c8c8c;
+  font-variant-numeric: tabular-nums;
+}
+
+.reader[data-theme='sepia'] .reader-folio {
+  color: #9d8a70;
+}
+
+.reader[data-theme='dark'] .reader-folio {
+  color: #7a7a80;
 }

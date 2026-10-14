@@ -22,6 +22,8 @@ const api: ElectronNativeApi = {
   versions: () => ({ chrome: process.versions.chrome, electron: process.versions.electron, platform: process.platform }),
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url),
   setColorScheme: (scheme) => ipcRenderer.invoke(IPC.setColorScheme, scheme),
+  listFolder: (path, extensions) => ipcRenderer.invoke(IPC.listFolder, path, extensions),
+  findBookFiles: (folder, extensions) => ipcRenderer.invoke(IPC.findBookFiles, folder, extensions),
 };
 
 contextBridge.exposeInMainWorld('ereaderNative', api);

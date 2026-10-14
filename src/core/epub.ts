@@ -3,6 +3,7 @@ import { deobfuscateFonts } from './fonts';
 import { xhtmlToHtml } from './html';
 import { injectReader, isHtmlMediaType } from './inject';
 import { resolveHref, splitFragment } from './paths';
+import { epubSeries } from './series';
 import type { BookManifest, SpineItem, TocItem } from './types';
 import { all, attr, child, children, first, parseXml, text } from './xml';
 
@@ -130,6 +131,7 @@ export function parsePackage(opf: Document, opfPath: string): PackageInfo {
     authors: all(metadata, 'creator').map(text).filter(Boolean),
     language: text(first(metadata, 'language')),
     cover: cover?.mediaType.startsWith('image/') ? cover.href : null,
+    series: epubSeries(opf),
     layout: metaProperty('rendition:layout') === 'pre-paginated' ? 'pre-paginated' : 'reflowable',
     direction: spineEl && attr(spineEl, 'page-progression-direction') === 'rtl' ? 'rtl' : 'ltr',
     spine,

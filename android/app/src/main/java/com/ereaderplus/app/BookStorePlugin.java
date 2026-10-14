@@ -1,5 +1,6 @@
 package com.ereaderplus.app;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
@@ -8,7 +9,9 @@ import android.content.pm.PackageInfo;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
 import android.provider.OpenableColumns;
+import android.provider.Settings;
 import android.util.Base64;
 import androidx.activity.result.ActivityResult;
 import androidx.webkit.WebViewCompat;
@@ -16,9 +19,12 @@ import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -29,7 +35,11 @@ import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
@@ -40,7 +50,11 @@ import java.util.zip.ZipInputStream;
  * Native side of src/platform/capacitor.ts: book files live in filesDir/books/&lt;bookId&gt;/ and are served to the
  * WebView by {@link BookWebViewClient} from https://&lt;bookId&gt;.ereaderplus.invalid/.
  */
-@CapacitorPlugin(name = "BookStore")
+@CapacitorPlugin(
+    name = "BookStore",
+    // Folder browsing before Android 11; from Android 11 on it needs "All files access" (MANAGE_EXTERNAL_STORAGE).
+    permissions = { @Permission(strings = { Manifest.permission.READ_EXTERNAL_STORAGE }, alias = "storage") }
+)
 public class BookStorePlugin extends Plugin {
 
     private static final Pattern BOOK_ID = Pattern.compile("^[a-f0-9]{32}$");
@@ -67,6 +81,8 @@ public class BookStorePlugin extends Plugin {
     };
 
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    /** Folder listing and scans, which can take a while, so they never hold up reading book files on {@link #io}. */
+    private final ExecutorService folders = Executors.newSingleThreadExecutor();
     private final List<JSObject> pendingOpenFiles = new ArrayList<>();
 
     @Override
@@ -306,6 +322,193 @@ public class BookStorePlugin extends Plugin {
         result.put("versionName", info != null ? info.versionName : "");
         result.put("androidVersion", Build.VERSION.RELEASE);
         call.resolve(result);
+    }
+
+    // --- Folders: the in-app folder browser and watched-folder scans ------------------------------
+
+    /** Deeper than this is almost certainly not a book collection (and guards against pathological trees). */
+    private static final int MAX_SCAN_DEPTH = 16;
+    /** A scan stops after this many book files. */
+    private static final int MAX_SCAN_FILES = 20_000;
+
+    /**
+     * Browsing folders needs "All files access" on Android 11+ (granted in system settings) and the storage
+     * permission before that.
+     */
+    private boolean folderAccessGranted() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return Environment.isExternalStorageManager();
+        return getPermissionState("storage") == PermissionState.GRANTED;
+    }
+
+    private void resolveFolderAccess(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("granted", folderAccessGranted());
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void hasFolderAccess(PluginCall call) {
+        resolveFolderAccess(call);
+    }
+
+    @PluginMethod
+    public void requestFolderAccess(PluginCall call) {
+        if (folderAccessGranted()) {
+            resolveFolderAccess(call);
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:" + getContext().getPackageName()));
+            try {
+                startActivityForResult(call, intent, "onFolderAccessResult");
+            } catch (ActivityNotFoundException e) {
+                // Some devices only have the general list of apps with all files access.
+                startActivityForResult(call, new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION), "onFolderAccessResult");
+            }
+        } else {
+            requestPermissionForAlias("storage", call, "onStoragePermissionResult");
+        }
+    }
+
+    @ActivityCallback
+    private void onFolderAccessResult(PluginCall call, ActivityResult result) {
+        resolveFolderAccess(call);
+    }
+
+    @PermissionCallback
+    private void onStoragePermissionResult(PluginCall call) {
+        resolveFolderAccess(call);
+    }
+
+    /** Internal storage, then removable volumes (SD cards, USB drives), found through the app's folder on each. */
+    private List<File> storageRoots() {
+        List<File> roots = new ArrayList<>();
+        roots.add(Environment.getExternalStorageDirectory());
+        for (File appDir : getContext().getExternalFilesDirs(null)) {
+            if (appDir == null) continue;
+            String path = appDir.getAbsolutePath();
+            int at = path.indexOf("/Android/data/");
+            if (at <= 0) continue;
+            File root = new File(path.substring(0, at));
+            if (!roots.contains(root)) roots.add(root);
+        }
+        return roots;
+    }
+
+    private static boolean isHidden(String name) {
+        return name.startsWith(".") || name.equalsIgnoreCase("LOST.DIR");
+    }
+
+    private static boolean hasExtension(String name, Set<String> extensions) {
+        int dot = name.lastIndexOf('.');
+        return dot > 0 && extensions.contains(name.substring(dot + 1).toLowerCase(Locale.ROOT));
+    }
+
+    private static Set<String> extensionSet(PluginCall call) {
+        Set<String> extensions = new HashSet<>();
+        JSArray array = call.getArray("extensions");
+        if (array == null) return extensions;
+        for (int i = 0; i < array.length(); i++) {
+            String ext = array.optString(i, "");
+            if (!ext.isEmpty()) extensions.add(ext.toLowerCase(Locale.ROOT));
+        }
+        return extensions;
+    }
+
+    private static JSObject folderEntry(String name, File dir) {
+        JSObject entry = new JSObject();
+        entry.put("name", name);
+        entry.put("path", dir.getAbsolutePath());
+        return entry;
+    }
+
+    @PluginMethod
+    public void listFolder(PluginCall call) {
+        String path = call.getString("path", "");
+        Set<String> extensions = extensionSet(call);
+        folders.execute(() -> {
+            JSObject result = new JSObject();
+            JSArray list = new JSArray();
+            JSArray books = new JSArray();
+            String error = null;
+            List<File> roots = storageRoots();
+            if (path == null || path.isEmpty()) {
+                for (int i = 0; i < roots.size(); i++) {
+                    File root = roots.get(i);
+                    list.put(folderEntry(i == 0 ? "Internal storage" : "SD card (" + root.getName() + ")", root));
+                }
+                result.put("path", "");
+                result.put("parent", JSObject.NULL);
+            } else {
+                File dir = new File(path);
+                File[] children = dir.listFiles();
+                if (children == null) {
+                    error = folderAccessGranted() ? "This folder can't be read." : "The app has no access to the device's folders.";
+                } else {
+                    List<File> subfolders = new ArrayList<>();
+                    List<File> bookFiles = new ArrayList<>();
+                    for (File child : children) {
+                        if (child.isDirectory() && !isHidden(child.getName())) subfolders.add(child);
+                        else if (child.isFile() && hasExtension(child.getName(), extensions)) bookFiles.add(child);
+                    }
+                    Collections.sort(subfolders, (a, b) -> a.getName().compareToIgnoreCase(b.getName()));
+                    Collections.sort(bookFiles, (a, b) -> a.getName().compareToIgnoreCase(b.getName()));
+                    for (File folder : subfolders) list.put(folderEntry(folder.getName(), folder));
+                    for (File book : bookFiles) books.put(bookFileEntry(book));
+                }
+                result.put("path", dir.getAbsolutePath());
+                // The parent of a storage root is the roots list.
+                result.put("parent", roots.contains(dir) || dir.getParent() == null ? "" : dir.getParent());
+            }
+            result.put("folders", list);
+            result.put("books", books);
+            result.put("error", error == null ? JSObject.NULL : error);
+            call.resolve(result);
+        });
+    }
+
+    @PluginMethod
+    public void findBookFiles(PluginCall call) {
+        String folder = call.getString("folder", "");
+        Set<String> extensions = extensionSet(call);
+        folders.execute(() -> {
+            JSArray files = new JSArray();
+            walk(new File(folder), extensions, 0, new HashSet<>(), files);
+            JSObject result = new JSObject();
+            result.put("files", files);
+            call.resolve(result);
+        });
+    }
+
+    /** A book file as src/platform/platform.ts FoundBookFile: a file:// reference the importer can open, size and date. */
+    private static JSObject bookFileEntry(File file) {
+        JSObject fileRef = new JSObject();
+        fileRef.put("ref", Uri.fromFile(file).toString());
+        fileRef.put("name", file.getName());
+        JSObject entry = new JSObject();
+        entry.put("file", fileRef);
+        entry.put("path", file.getAbsolutePath());
+        entry.put("size", file.length());
+        entry.put("modified", file.lastModified());
+        return entry;
+    }
+
+    /** `visited` holds canonical paths, so a folder reached again through a link is not walked twice. */
+    private static void walk(File dir, Set<String> extensions, int depth, Set<String> visited, JSArray found) {
+        if (depth > MAX_SCAN_DEPTH || found.length() >= MAX_SCAN_FILES) return;
+        try {
+            if (!visited.add(dir.getCanonicalPath())) return;
+        } catch (IOException e) {
+            return;
+        }
+        File[] children = dir.listFiles();
+        if (children == null) return; // Unreadable: skipped, the rest of the collection still counts.
+        for (File child : children) {
+            if (found.length() >= MAX_SCAN_FILES) return;
+            if (child.isDirectory()) {
+                if (!isHidden(child.getName())) walk(child, extensions, depth + 1, visited, found);
+            } else if (child.isFile() && hasExtension(child.getName(), extensions)) {
+                found.put(bookFileEntry(child));
+            }
+        }
     }
 
     // --- Files ------------------------------------------------------------------------------------

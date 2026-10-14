@@ -17,6 +17,8 @@ export interface FrameSettings {
   fontFamily: string;
   lineHeight: number;
   margin: number;
+  fontWeight: number;
+  spread: boolean;
   overrideStyles: boolean;
   layout: 'reflowable' | 'pre-paginated';
 }
@@ -26,12 +28,16 @@ export type GotoTarget =
   | { kind: 'fraction'; value: number }
   | { kind: 'page'; value: number }
   | { kind: 'end' }
-  | { kind: 'fragment'; value: string };
+  | { kind: 'fragment'; value: string }
+  /** The `occurrence`-th match of a search inside the book (see textsearch.ts), which is also highlighted. */
+  | { kind: 'search'; query: string; occurrence: number };
 
 export type HostMessage =
   | { tag: typeof MESSAGE_TAG; type: 'settings'; settings: FrameSettings }
   | { tag: typeof MESSAGE_TAG; type: 'goto'; target: GotoTarget }
   | { tag: typeof MESSAGE_TAG; type: 'turn'; dir: 1 | -1 }
+  /** Removes the highlight of a search match. */
+  | { tag: typeof MESSAGE_TAG; type: 'clearSearch' }
   /** Fixed layout: magnification (1 = fit to screen) and horizontal position (0..1) to keep across pages. */
   | { tag: typeof MESSAGE_TAG; type: 'zoom'; zoom: number; panX: number };
 

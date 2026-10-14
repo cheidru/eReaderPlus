@@ -3,6 +3,7 @@ import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { IPC } from '../src/platform/electron-api';
 import * as bookstore from './bookstore';
+import { findBookFiles, listFolder } from './folders';
 import { kvGet, kvSet } from './kv';
 import { APP_ORIGIN, registerProtocols, registerSchemes } from './protocols';
 import { hardenAllWebContents, hardenSession, isAppUrl } from './security';
@@ -98,6 +99,11 @@ function createWindow(readerSession: Electron.Session): void {
   void mainWindow.loadURL(devUrl ?? `${APP_ORIGIN}/index.html`);
 }
 
+/** An argument that must be a list of strings (file extensions). */
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
 /** IPC is only accepted from the app's own top-level page, never from book frames. */
 function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>): void {
   ipcMain.handle(channel, (event: IpcMainInvokeEvent, ...args: unknown[]) => {
@@ -139,6 +145,8 @@ function registerIpc(): void {
     await shell.openExternal(url);
   });
   // Drives prefers-color-scheme for the app and every book frame.
+  handle(IPC.listFolder, (dir: string, extensions: string[]) => listFolder(String(dir), stringList(extensions)));
+  handle(IPC.findBookFiles, (dir: string, extensions: string[]) => findBookFiles(String(dir), stringList(extensions)));
   handle(IPC.setColorScheme, (scheme: string) => {
     nativeTheme.themeSource = scheme === 'dark' ? 'dark' : 'light';
   });

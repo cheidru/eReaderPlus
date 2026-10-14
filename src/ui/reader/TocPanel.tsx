@@ -1,5 +1,6 @@
 import { splitFragment } from '../../core/paths';
 import type { TocItem } from '../../core/types';
+import { Icon } from '../icons';
 import './Panels.css';
 
 interface Props {
@@ -15,10 +16,12 @@ export function TocPanel({ toc, currentHref, onSelect, onClose }: Props) {
       <div className="panel-header">
         <h2>Contents</h2>
         <button type="button" className="icon-button" onClick={onClose} aria-label="Close contents">
-          ✕
+          <Icon name="close" />
         </button>
       </div>
-      {toc.length === 0 ? <p className="panel-empty">This book has no table of contents.</p> : <TocList items={toc} currentHref={currentHref} onSelect={onSelect} />}
+      <div className="panel-body">
+        {toc.length === 0 ? <p className="panel-empty">This book has no table of contents.</p> : <TocList items={toc} currentHref={currentHref} onSelect={onSelect} />}
+      </div>
     </aside>
   );
 }

@@ -14,6 +14,13 @@ export interface SpineItem {
   linear: boolean;
 }
 
+/** A book's place in a series, from its own metadata. */
+export interface Series {
+  name: string;
+  /** Position in the series (may be fractional, e.g. 2.5 for a novella). */
+  index?: number;
+}
+
 export interface BookManifest {
   version: 1;
   id: string;
@@ -25,6 +32,7 @@ export interface BookManifest {
   language: string;
   /** Book-root-relative path of the cover image, if any. */
   cover: string | null;
+  series?: Series;
   /** 'pre-paginated' books (fixed layout EPUB, comics) are scaled per page instead of reflowed. */
   layout: 'reflowable' | 'pre-paginated';
   direction: 'ltr' | 'rtl';
@@ -53,7 +61,50 @@ export interface LibraryEntry {
   addedAt: number;
   lastOpenedAt: number;
   progress: number;
+  series?: Series;
+  /** The file the book was imported from (FileRef.ref), so opening that file again opens this book. */
+  source?: string;
+  /** Name of the file the book was imported from (missing for books imported before it was recorded). */
+  fileName?: string;
+  favorite?: boolean;
+  /** On the "To read" shelf. */
+  toRead?: boolean;
+  /** On the "Finished" shelf; finished books leave "Reading now". */
+  finished?: boolean;
+  /** Names of the collections the book belongs to. */
+  collections?: string[];
 }
+
+/** The flags a reader toggles on a book from the library. */
+export type EntryFlags = Pick<LibraryEntry, 'favorite' | 'toRead' | 'finished' | 'collections'>;
+
+export type LibraryLayout = 'cards' | 'shelf';
+export type AppTheme = 'dark' | 'light';
+export type SortKey = 'title' | 'author' | 'series' | 'format' | 'added' | 'read';
+
+export interface LibraryFilter {
+  /** Formats to show; empty shows every format. */
+  formats: BookFormat[];
+  hideFinished: boolean;
+}
+
+export interface LibraryPrefs {
+  /** 'cards' is the ReadEra-style list, 'shelf' the plain cover grid of iPad Books. */
+  layout: LibraryLayout;
+  /** Colors of the app around the book (the book's own colors are ReaderSettings.theme). */
+  appTheme: AppTheme;
+  sort: SortKey;
+  filter: LibraryFilter;
+}
+
+export const DEFAULT_LIBRARY_PREFS: LibraryPrefs = {
+  layout: 'cards',
+  appTheme: 'dark',
+  sort: 'read',
+  filter: { formats: [], hideFinished: false },
+};
+
+export const ALL_FORMATS: BookFormat[] = ['epub', 'pdf', 'fb2', 'mobi', 'azw3', 'djvu', 'cbz', 'chm', 'lit'];
 
 export type Theme = 'light' | 'sepia' | 'dark';
 export type Flow = 'paginated' | 'scrolled';
@@ -69,6 +120,10 @@ export interface ReaderSettings {
   lineHeight: number;
   /** Page margin in CSS px. */
   margin: number;
+  /** Extra thickness of the letters, 0 (as published) to FONT_WEIGHT_MAX. */
+  fontWeight: number;
+  /** Paginated text shows two pages side by side when the window is in landscape. */
+  spread: boolean;
   /** When false, the reader injects no typography overrides at all (publisher layout). */
   overrideStyles: boolean;
 }
@@ -80,8 +135,12 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   fontFamily: '',
   lineHeight: 0,
   margin: 32,
+  fontWeight: 0,
+  spread: false,
   overrideStyles: true,
 };
+
+export const FONT_WEIGHT_MAX = 4;
 
 /** Font size range and step, in percent (settings panel, Ctrl+wheel and pinch). */
 export const FONT_SCALE_MIN = 50;
