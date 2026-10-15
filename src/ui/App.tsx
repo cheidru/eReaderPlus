@@ -14,6 +14,7 @@ import {
   saveSettings,
   updateEntryFlags,
 } from '../core/library';
+import { checkForAppUpdate, UPDATE_DISMISSED_KEY, type AppUpdate } from '../core/app-updates';
 import { loadWatchedFolders, saveWatchedFolders, scanWatchedFolders, withFolder, type ScanResult } from '../core/folders';
 import type { LibraryLocation } from '../core/shelves';
 import { DEFAULT_LIBRARY_PREFS, DEFAULT_SETTINGS, type EntryFlags, type LibraryEntry, type LibraryPrefs, type ReaderSettings } from '../core/types';
@@ -62,6 +63,8 @@ export function App() {
   const [settings, setSettings] = useState<ReaderSettings>(DEFAULT_SETTINGS);
   const [prefs, setPrefs] = useState<LibraryPrefs>(DEFAULT_LIBRARY_PREFS);
   const [engine, setEngine] = useState<EngineInfo | null>(null);
+  /** A newer Android release, which the user installs from its APK (the desktop app updates itself). */
+  const [update, setUpdate] = useState<AppUpdate | null>(null);
   const [modal, setModal] = useState<Modal | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -197,6 +200,13 @@ export function App() {
   };
   useEffect(() => {
     if (platform?.kind !== 'android') return;
+    void checkForAppUpdate(__APP_VERSION__).then(async (found) => {
+      if (found && (await platform.kvGet<string>(UPDATE_DISMISSED_KEY)) !== found.version) setUpdate(found);
+    });
+  }, [platform]);
+
+  useEffect(() => {
+    if (platform?.kind !== 'android') return;
     const handle = CapacitorApp.addListener('backButton', () => {
       if (!back.current()) void CapacitorApp.exitApp();
     });
@@ -318,6 +328,24 @@ export function App() {
                 Update it
               </button>
             )}
+          </div>
+        )}
+        {update && (
+          <div className="app-banner" role="status">
+            eReaderPlus {update.version} is available.
+            <button type="button" className="link-button" onClick={() => void platform.openExternal(update.url)}>
+              Download
+            </button>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => {
+                setUpdate(null);
+                void platform.kvSet(UPDATE_DISMISSED_KEY, update.version);
+              }}
+            >
+              Not now
+            </button>
           </div>
         )}
 
