@@ -80,7 +80,7 @@ import { findRange } from '../core/textsearch';
     const width = Number(/width\s*=\s*(\d+)/.exec(viewport)?.[1]);
     const height = Number(/height\s*=\s*(\d+)/.exec(viewport)?.[1]);
     const sized = width > 0 && height > 0;
-    // A spread (PDF) is fitted as two boxes as large as this page. A pair fills both (the next page goes in
+    // A spread (PDF, DjVu) is fitted as two boxes as large as this page. A pair fills both (the next page goes in
     // the other, or nothing); a page alone (the cover) is centered, as large as the pages of a pair.
     const spread = sized ? (settings?.fixedSpread ?? null) : null;
     // A page without a size (comics: an image fitted to the screen) is as large as the screen.
@@ -92,7 +92,7 @@ import { findRange } from '../core/textsearch';
     applyFixedView();
     root.classList.add('ereader-fixed-scaled');
     if ((root.dataset.ereaderSpread ?? null) !== spread) {
-      // The page renderer (pdf-page.ts) places its page and adds or removes the next one.
+      // The page renderer (pdf-page.ts, djvu-page.ts) places its page and adds or removes the next one.
       if (spread) root.dataset.ereaderSpread = spread;
       else delete root.dataset.ereaderSpread;
       window.dispatchEvent(new Event('ereader:spread'));

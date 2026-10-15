@@ -376,6 +376,39 @@ async function frameWithText(page, text) {
   const third = await pixel('0003.html');
   check('DjVu outline navigates', () => assert.ok(near(third.color, [40, 70, 200]), JSON.stringify(third.color)));
 
+  // The window is landscape, so two pages show pages 1–2 side by side, then page 3 alone.
+  const twoPages = async () => {
+    await page.getByRole('button', { name: 'Display settings' }).click();
+    await page.getByRole('switch', { name: /Two pages in landscape/ }).click();
+    await page.getByRole('button', { name: 'Close settings' }).click();
+  };
+  await twoPages();
+  await page.keyboard.press('Home');
+  const djvuSpreadFrame = await bookFrame(page, '0001.html');
+  await djvuSpreadFrame.waitForFunction(() => document.querySelector('[data-ereader-part="1"] canvas')?.width > 1, null, { timeout: 15000 });
+  const djvuSpread = await djvuSpreadFrame.evaluate(() => {
+    const sheets = [...document.querySelectorAll('.djvu-sheet')];
+    const color = (sheet) => [...sheet.querySelector('canvas').getContext('2d').getImageData(2, 2, 1, 1).data.slice(0, 3)];
+    return {
+      colors: sheets.map(color),
+      left: sheets.map((sheet) => sheet.getBoundingClientRect().left),
+      width: document.documentElement.getBoundingClientRect().width,
+      screen: innerWidth,
+    };
+  });
+  await page.screenshot({ path: path.join(shots, '11b-djvu-two-pages.png') });
+  check('DjVu two-page view shows the next page beside the first, fitted to the window', () => {
+    assert.ok(near(djvuSpread.colors[0], [200, 40, 40]) && near(djvuSpread.colors[1], [40, 160, 60]), JSON.stringify(djvuSpread.colors));
+    assert.ok(djvuSpread.left[1] > djvuSpread.left[0], JSON.stringify(djvuSpread.left));
+    assert.ok(djvuSpread.width <= djvuSpread.screen + 1, JSON.stringify(djvuSpread));
+  });
+  await page.getByRole('button', { name: 'Next page' }).click();
+  const djvuLast = await bookFrame(page, '0003.html');
+  await djvuLast.waitForFunction(() => document.documentElement.dataset.djvuDecoder, null, { timeout: 15000 });
+  const djvuLastSheets = await djvuLast.evaluate(() => document.querySelectorAll('.djvu-sheet').length);
+  check('DjVu two-page view turns two pages at a time, the last page alone', () => assert.equal(djvuLastSheets, 1));
+  await twoPages();
+
   await page.getByRole('button', { name: 'Back to library' }).click();
   const cover = page.locator('.book-open[title="sample"] img');
   await cover.waitFor();

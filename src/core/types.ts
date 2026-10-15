@@ -131,7 +131,7 @@ export interface ReaderSettings {
   fontWeight: number;
   /** Paginated text and PDF show two pages side by side when the window is in landscape. */
   spread: boolean;
-  /** PDF spreads show the first page alone, then pages 2–3, 4–5, … as in a printed book. */
+  /** PDF and DjVu spreads show the first page alone, then pages 2–3, 4–5, … as in a printed book. */
   spreadCover: boolean;
   /** When false, the reader injects no typography overrides at all (publisher layout). */
   overrideStyles: boolean;

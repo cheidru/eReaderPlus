@@ -4,7 +4,7 @@ import { loadManifest } from '../../core/import';
 import { loadProgress, markOpened, overallProgress, saveProgress } from '../../core/library';
 import { MESSAGE_TAG, parseFrameMessage, type FixedSpread, type FrameSettings, type GotoTarget, type HostMessage } from '../../core/messages';
 import { splitFragment } from '../../core/paths';
-import { spreadEnd, spreadFits, spreadStart } from '../../core/spread';
+import { hasPageSpreads, spreadEnd, spreadFits, spreadStart } from '../../core/spread';
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP, type BookManifest, type Progress, type ReaderSettings, type TocItem } from '../../core/types';
 import { bookUrl, type Platform } from '../../platform';
 import { Icon } from '../icons';
@@ -94,17 +94,17 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
     if (progress) saveProgress(platform, bookId, progress).catch((e: unknown) => console.error('Saving reading position failed:', e));
   }, [platform, bookId]);
 
-  /** A PDF spread shows two pages (paired as spread.ts says): the page document of the first shows the second beside it. */
-  const pdfSpread = manifest?.format === 'pdf' && settings.spread && frameFitsSpread;
+  /** A PDF or DjVu spread shows two pages (paired as spread.ts says): the page document of the first shows the second beside it. */
+  const pageSpread = hasPageSpreads(manifest) && settings.spread && frameFitsSpread;
   const coverAlone = settings.spreadCover;
   /** The page whose document shows page `index`: the first of its spread. */
-  const shownBy = useCallback((index: number) => (pdfSpread ? spreadStart(index, coverAlone) : index), [pdfSpread, coverAlone]);
+  const shownBy = useCallback((index: number) => (pageSpread ? spreadStart(index, coverAlone) : index), [pageSpread, coverAlone]);
   /** The last page shown, which counts as read. */
   const lastShown = useCallback(
-    (index: number) => (pdfSpread && manifest ? spreadEnd(index, manifest.spine.length, coverAlone) : index),
-    [pdfSpread, manifest, coverAlone],
+    (index: number) => (pageSpread && manifest ? spreadEnd(index, manifest.spine.length, coverAlone) : index),
+    [pageSpread, manifest, coverAlone],
   );
-  const fixedSpread: FixedSpread | null = pdfSpread ? (coverAlone && spineIndex === 0 ? 'single' : 'pair') : null;
+  const fixedSpread: FixedSpread | null = pageSpread ? (coverAlone && spineIndex === 0 ? 'single' : 'pair') : null;
 
   const frameSettings = useMemo<FrameSettings | null>(
     () => (manifest ? { ...settings, layout: manifest.layout, fixedSpread } : null),
@@ -498,7 +498,7 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
         <SettingsPanel
           settings={settings}
           fixedLayout={manifest.layout === 'pre-paginated'}
-          canSpread={manifest.layout === 'reflowable' || manifest.format === 'pdf'}
+          canSpread={manifest.layout === 'reflowable' || hasPageSpreads(manifest)}
           onChange={onSettingsChange}
           onClose={() => setPanel(null)}
         />

@@ -24,7 +24,7 @@ export interface FrameSettings {
   overrideStyles: boolean;
   layout: 'reflowable' | 'pre-paginated';
   /**
-   * Fixed layout (PDF) in a two-page spread: 'pair' shows the next page beside the document's own, 'single'
+   * Fixed layout (PDF, DjVu) in a two-page spread: 'pair' shows the next page beside the document's own, 'single'
    * shows its page alone (a book's cover), centered and as large as the pages of a pair.
    */
   fixedSpread: FixedSpread | null;

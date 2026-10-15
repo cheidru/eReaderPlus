@@ -1,4 +1,6 @@
-/* DjVu page documents: the page image fills the fixed-layout page box; the OCR text lies on top, invisible. */
+/* DjVu page documents: the page image fills the fixed-layout page box (in the page's own pixels); the OCR
+   text lies on top, invisible. In a two-page spread the box is twice as wide and the next page (or nothing)
+   fills the other half. */
 
 html,
 body {
@@ -10,6 +12,20 @@ body {
 body {
   position: relative;
   overflow: hidden;
+}
+
+/* Each page shown, placed and sized by djvu-page.ts. */
+.djvu-sheet {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  background: #fff;
+}
+
+/* A page alone in a spread (the cover, an odd last page) leaves the other half to the reader's background. */
+html[data-ereader-spread] body {
+  background: transparent;
 }
 
 canvas.djvu-page {

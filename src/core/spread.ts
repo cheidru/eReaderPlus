@@ -1,7 +1,11 @@
 /**
- * Two-page spreads of fixed-layout books (PDF): which spine documents are shown together. A spread is
+ * Two-page spreads of page-image books (PDF, DjVu): which spine documents are shown together. A spread is
  * shown by the document of its first page, which draws the second page beside its own.
  */
+import type { BookFormat } from './types';
+
+/** Books whose page documents can show the next page beside their own. */
+export const hasPageSpreads = (book: { format: BookFormat } | null | undefined) => book?.format === 'pdf' || book?.format === 'djvu';
 
 /** Narrower than this, two pages side by side would be too cramped to read. */
 const SPREAD_MIN_WIDTH = 640;
