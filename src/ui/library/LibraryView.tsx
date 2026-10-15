@@ -19,13 +19,15 @@ import type { FileRef, FolderListing, Platform } from '../../platform';
 import { FilterDialog, PopupMenu, type MenuItem } from '../Dialogs';
 import { Icon, type IconName } from '../icons';
 import { FolderAccessPrompt } from '../pages/FolderPicker';
-import { BookCard, ShelfTile } from './BookItems';
+import { BookCard, ImportingItem, ShelfTile, type ImportingBook } from './BookItems';
 import { DRAWER_SHELVES, locationTitle, percentRead, SHELVES, SORT_LABELS, type BookHandlers } from './shelfInfo';
 import './LibraryView.css';
 
 interface Props {
   platform: Platform;
   entries: LibraryEntry[];
+  /** Book files being imported, shown first on the shelves new books go to. */
+  importing: ImportingBook[];
   /** Every collection name, including empty collections. */
   collections: string[];
   prefs: LibraryPrefs;
@@ -91,6 +93,7 @@ export function LibraryView(props: Props) {
   );
   const title = locationTitle(location);
   const inGroup = location.group !== undefined;
+  const shownImports = (location.shelf === 'reading' || location.shelf === 'all') && !inGroup && search === null ? props.importing : [];
 
   const goTo = (next: LibraryLocation) => {
     setDrawerOpen(false);
@@ -250,10 +253,13 @@ export function LibraryView(props: Props) {
               </li>
             )}
           </ul>
-        ) : visible.length === 0 ? (
+        ) : visible.length === 0 && shownImports.length === 0 ? (
           <EmptyState entries={entries} location={location} filtered={search !== null || isFilterActive(prefs.filter)} platform={platform} onAdd={props.onAdd} />
         ) : (
           <ul className={layout === 'shelf' ? 'shelf-grid' : 'card-list'}>
+            {shownImports.map((book) => (
+              <ImportingItem key={book.key} book={book} layout={layout} />
+            ))}
             {visible.map((entry) =>
               layout === 'shelf' ? (
                 <ShelfTile key={entry.id} platform={platform} entry={entry} books={books} onMenu={(anchor) => setMenu({ kind: 'book', anchor, entry })} />

@@ -62,23 +62,42 @@ function entryFor(manifest: BookManifest, file: FileRef, opened: boolean): Libra
   };
 }
 
+export interface AddedBook {
+  entry: LibraryEntry;
+  isNew: boolean;
+  /** Set while the new book's cover is still being drawn; settles once the library entry has it. Never rejects. */
+  coverReady: Promise<void> | null;
+}
+
 /**
  * Imports a file and adds it to the library. If the same book is already in the library, the new copy is
  * discarded and the existing entry is returned with `isNew` false. A book opened right away counts as
  * read now; one found by a folder scan (`opened: false`) waits on the shelf until it is first opened.
+ * The book is added as soon as it is readable; a cover still being drawn (`coverReady`) follows.
  */
-export async function addBook(platform: Platform, file: FileRef, { opened = true }: { opened?: boolean } = {}): Promise<{ entry: LibraryEntry; isNew: boolean }> {
-  const manifest = await importBook(platform, file);
+export async function addBook(platform: Platform, file: FileRef, { opened = true }: { opened?: boolean } = {}): Promise<AddedBook> {
+  const { manifest, pendingCover } = await importBook(platform, file);
   const entry = entryFor(manifest, file, opened);
   const existing = await updateLibrary(platform, (entries) => {
     const found = entries.find((e) => e.format === manifest.format && e.identifier === manifest.identifier);
     return [found ? entries : [entry, ...entries], found ?? null];
   });
   if (existing) {
-    await platform.deleteBook(manifest.id);
-    return { entry: existing, isNew: false };
+    // Deleted once a cover being drawn no longer writes into the folder; the existing book opens meanwhile.
+    void (pendingCover ?? Promise.resolve())
+      .catch(() => {})
+      .then(() => platform.deleteBook(manifest.id))
+      .catch(() => {});
+    return { entry: existing, isNew: false, coverReady: null };
   }
-  return { entry, isNew: true };
+  const coverReady =
+    pendingCover
+      ?.then(async (cover) => {
+        if (!cover) return;
+        await updateLibrary(platform, (entries) => [entries.map((e) => (e.id === entry.id ? { ...e, cover } : e)), undefined]);
+      })
+      .catch((error: unknown) => console.warn('Could not save the cover:', error)) ?? null;
+  return { entry, isNew: true, coverReady };
 }
 
 /**

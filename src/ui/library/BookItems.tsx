@@ -1,5 +1,6 @@
+import { createContext, useContext } from 'react';
 import { formatLabel } from '../../core/shelves';
-import type { LibraryEntry } from '../../core/types';
+import type { LibraryEntry, LibraryLayout } from '../../core/types';
 import { bookUrl, type Platform } from '../../platform';
 import { Icon } from '../icons';
 import { percentRead, seriesLabel, type BookHandlers } from './shelfInfo';
@@ -13,14 +14,28 @@ function placeholderColor(title: string): string {
   return PLACEHOLDER_COLORS[Math.abs(hash) % PLACEHOLDER_COLORS.length];
 }
 
-export function Cover({ platform, entry }: { platform: Platform; entry: LibraryEntry }) {
-  if (entry.cover) return <img className="cover-img" src={bookUrl(platform, entry.id, entry.cover)} alt="" loading="lazy" draggable={false} />;
+/** Ids of books whose cover is still being drawn: their placeholder shimmers until the cover arrives. */
+export const DrawingCovers = createContext<ReadonlySet<string>>(new Set());
+
+/** A book file being imported, shown as a card until its book replaces it. */
+export interface ImportingBook {
+  key: string;
+  fileName: string;
+}
+
+function CoverPlaceholder({ title, author, drawing }: { title: string; author?: string; drawing: boolean }) {
   return (
-    <span className="cover-placeholder" style={{ background: placeholderColor(entry.title) }}>
-      <span className="cover-placeholder-title">{entry.title}</span>
-      {entry.authors.length > 0 && <span className="cover-placeholder-author">{entry.authors[0]}</span>}
+    <span className={drawing ? 'cover-placeholder cover-drawing' : 'cover-placeholder'} style={{ background: placeholderColor(title) }}>
+      <span className="cover-placeholder-title">{title}</span>
+      {author && <span className="cover-placeholder-author">{author}</span>}
     </span>
   );
+}
+
+export function Cover({ platform, entry }: { platform: Platform; entry: LibraryEntry }) {
+  const drawing = useContext(DrawingCovers).has(entry.id);
+  if (entry.cover) return <img className="cover-img" src={bookUrl(platform, entry.id, entry.cover)} alt="" loading="lazy" draggable={false} />;
+  return <CoverPlaceholder title={entry.title} author={entry.authors[0]} drawing={drawing} />;
 }
 
 /** Star, clock, double check and collections: the toggles ReadEra puts on every book. */
@@ -104,6 +119,35 @@ export function ShelfTile({ platform, entry, books, onMenu }: ItemProps) {
         <button type="button" className="icon-button tile-more" aria-label={`More actions for ${entry.title}`} onClick={(e) => onMenu(e.currentTarget, entry)}>
           <Icon name="moreHoriz" />
         </button>
+      </div>
+    </li>
+  );
+}
+
+/** A book file still being imported: its name on a shimmering placeholder, in the card or shelf layout. */
+export function ImportingItem({ book, layout }: { book: ImportingBook; layout: LibraryLayout }) {
+  const title = book.fileName.replace(/\.[^.]+$/, '');
+  const cover = <CoverPlaceholder title={title} drawing />;
+  if (layout === 'shelf') {
+    return (
+      <li className="book-card shelf-tile book-importing" aria-busy="true" title={book.fileName}>
+        <div className="book-open">
+          <span className="tile-cover">{cover}</span>
+        </div>
+        <div className="tile-footer">
+          <span className="tile-status">Importing…</span>
+        </div>
+      </li>
+    );
+  }
+  return (
+    <li className="book-card book-importing" aria-busy="true">
+      <div className="book-open" title={book.fileName}>
+        <span className="book-cover">{cover}</span>
+        <span className="book-text">
+          <span className="book-title">{title}</span>
+          <span className="book-meta">Importing…</span>
+        </span>
       </div>
     </li>
   );

@@ -16,7 +16,13 @@ interface ManifestItem {
   properties: string[];
 }
 
-export type ParsedBook = Omit<BookManifest, 'version' | 'id' | 'format'>;
+export type ParsedBook = Omit<BookManifest, 'version' | 'id' | 'format'> & {
+  /**
+   * A cover still being drawn from the first page (PDF; pdf.js renders in its worker), which can take longer
+   * than the rest of the import: the book is readable before it settles. `cover` is null meanwhile.
+   */
+  pendingCover?: Promise<string | null>;
+};
 
 export async function findPackagePath(fs: BookFs): Promise<string> {
   const container = parseXml(await fs.readText(CONTAINER_PATH), CONTAINER_PATH);

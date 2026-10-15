@@ -7,6 +7,7 @@
 import type { FileRef, Platform } from '../platform/platform';
 import { SUPPORTED_EXTENSIONS } from './import';
 import { addBook } from './library';
+import type { LibraryEntry } from './types';
 
 const FOLDERS_KEY = 'watched-folders';
 const SEEN_KEY = 'watched-files';
@@ -60,16 +61,26 @@ export function isInside(path: string, folder: string): boolean {
 
 let running: Promise<ScanResult> | null = null;
 
+/** What a scan reports while it runs. */
+export interface ScanEvents {
+  /** Files handled out of the files to import. */
+  onProgress?: (done: number, total: number) => void;
+  /** A file's import starts. */
+  onImporting?: (file: FileRef) => void;
+  /** A new book is in the library. Its cover may still be being drawn (`coverReady`). */
+  onAdded?: (entry: LibraryEntry, coverReady: Promise<void> | null) => void;
+}
+
 /**
  * Imports new and changed book files from the watched folders. One scan at a time: a scan requested while
- * one runs gets that scan's result. `onProgress` reports files handled out of the files to import.
+ * one runs gets that scan's result (and only the first caller's events).
  */
-export function scanWatchedFolders(platform: Platform, onProgress: (done: number, total: number) => void = () => {}): Promise<ScanResult> {
-  running ??= scan(platform, onProgress).finally(() => (running = null));
+export function scanWatchedFolders(platform: Platform, events: ScanEvents = {}): Promise<ScanResult> {
+  running ??= scan(platform, events).finally(() => (running = null));
   return running;
 }
 
-async function scan(platform: Platform, onProgress: (done: number, total: number) => void): Promise<ScanResult> {
+async function scan(platform: Platform, { onProgress = () => {}, onImporting, onAdded }: ScanEvents): Promise<ScanResult> {
   const folders = await loadWatchedFolders(platform);
   const seen = (await platform.kvGet<Record<string, SeenFile>>(SEEN_KEY)) ?? {};
   const files = new Map<string, { file: FileRef; size: number; modified: number }>();
@@ -79,13 +90,21 @@ async function scan(platform: Platform, onProgress: (done: number, total: number
 
   const todo = [...files].filter(([path, f]) => seen[path]?.size !== f.size || seen[path]?.modified !== f.modified);
   const result: ScanResult = { found: files.size, added: 0, failed: 0 };
+  // A book's cover is drawn while the next file imports, but no further ahead: each open PDF holds its file in memory.
+  let drawing: Promise<void> | null = null;
   for (const [i, [path, f]] of todo.entries()) {
     onProgress(i, todo.length);
+    onImporting?.(f.file);
     let bookId: string | null = null;
     try {
-      const { entry, isNew } = await addBook(platform, f.file, { opened: false });
+      const { entry, isNew, coverReady } = await addBook(platform, f.file, { opened: false });
       bookId = entry.id;
-      if (isNew) result.added++;
+      if (isNew) {
+        result.added++;
+        onAdded?.(entry, coverReady);
+        await drawing;
+        drawing = coverReady;
+      }
     } catch {
       result.failed++;
     }
@@ -93,6 +112,7 @@ async function scan(platform: Platform, onProgress: (done: number, total: number
     // Saved as it goes, so a scan cut short (app closed) doesn't import the same files again.
     await platform.kvSet(SEEN_KEY, seen);
   }
+  await drawing;
   onProgress(todo.length, todo.length);
   return result;
 }

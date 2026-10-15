@@ -58,10 +58,46 @@ describe('watched folder scans', () => {
     const platform = fakePlatform({ '/b': [book('/b/1.epub'), book('/b/2.epub')] });
     await saveWatchedFolders(platform, ['/b']);
     const progress: string[] = [];
-    const [first, second] = await Promise.all([scanWatchedFolders(platform, (done, total) => progress.push(`${done}/${total}`)), scanWatchedFolders(platform)]);
+    const onProgress = (done: number, total: number) => progress.push(`${done}/${total}`);
+    const [first, second] = await Promise.all([scanWatchedFolders(platform, { onProgress }), scanWatchedFolders(platform)]);
     expect(first).toBe(second);
     expect(addBook).toHaveBeenCalledTimes(2);
     expect(progress).toEqual(['0/2', '1/2', '2/2']);
+  });
+
+  it('reports each book as it is added, and draws one cover while the next file imports', async () => {
+    const platform = fakePlatform({ '/b': [book('/b/1.pdf'), book('/b/2.pdf'), book('/b/3.pdf')] });
+    await saveWatchedFolders(platform, ['/b']);
+    const covers = new Map<string, () => void>();
+    const log: string[] = [];
+    addBook.mockImplementation(async (_platform: Platform, file: { ref: string }) => {
+      log.push(`import ${file.ref}`);
+      const coverReady = new Promise<void>((resolve) => covers.set(file.ref, resolve));
+      return { entry: { id: `id:${file.ref}` }, isNew: true, coverReady };
+    });
+    const scan = scanWatchedFolders(platform, {
+      onImporting: (file) => log.push(`importing ${file.ref}`),
+      onAdded: (entry) => log.push(`added ${entry.id}`),
+    });
+    await vi.waitFor(() => expect(log).toContain('added id:/b/2.pdf'));
+    // The third import waits for the first cover.
+    expect(log).not.toContain('importing /b/3.pdf');
+    covers.get('/b/1.pdf')!();
+    await vi.waitFor(() => expect(log).toContain('added id:/b/3.pdf'));
+    covers.get('/b/2.pdf')!();
+    covers.get('/b/3.pdf')!();
+    expect(await scan).toEqual({ found: 3, added: 3, failed: 0 });
+    expect(log).toEqual([
+      'importing /b/1.pdf',
+      'import /b/1.pdf',
+      'added id:/b/1.pdf',
+      'importing /b/2.pdf',
+      'import /b/2.pdf',
+      'added id:/b/2.pdf',
+      'importing /b/3.pdf',
+      'import /b/3.pdf',
+      'added id:/b/3.pdf',
+    ]);
   });
 });
 

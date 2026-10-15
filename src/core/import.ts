@@ -20,18 +20,39 @@ export function newBookId(): string {
   return crypto.randomUUID().replace(/-/g, '');
 }
 
+export interface ImportedBook {
+  manifest: BookManifest;
+  /** Set while the cover is still being drawn: settles to its path (also saved in the manifest), or null. */
+  pendingCover: Promise<string | null> | null;
+}
+
 /** Imports a book file into its own folder and returns its manifest. Cleans up on failure. */
-export async function importBook(platform: Platform, file: FileRef): Promise<BookManifest> {
+export async function importBook(platform: Platform, file: FileRef): Promise<ImportedBook> {
   const id = newBookId();
+  let book: ParsedBook;
+  let format: BookFormat;
   try {
-    const { format, parsed } = await convert(platform, file, id);
-    const manifest: BookManifest = { version: 1, id, format, ...parsed };
-    await platform.writeText(id, MANIFEST_PATH, JSON.stringify(manifest));
-    return manifest;
+    ({ format, parsed: book } = await convert(platform, file, id));
   } catch (error) {
     await platform.deleteBook(id).catch(() => {});
     throw error;
   }
+  const { pendingCover, ...parsed } = book;
+  const manifest: BookManifest = { version: 1, id, format, ...parsed };
+  try {
+    await platform.writeText(id, MANIFEST_PATH, JSON.stringify(manifest));
+  } catch (error) {
+    // Let a cover being drawn finish writing before the folder goes.
+    await pendingCover?.catch(() => {});
+    await platform.deleteBook(id).catch(() => {});
+    throw error;
+  }
+  const savedCover =
+    pendingCover?.then(async (cover) => {
+      if (cover) await platform.writeText(id, MANIFEST_PATH, JSON.stringify({ ...manifest, cover }));
+      return cover;
+    }) ?? null;
+  return { manifest, pendingCover: savedCover };
 }
 
 async function convert(platform: Platform, file: FileRef, id: string): Promise<{ format: BookFormat; parsed: ParsedBook }> {

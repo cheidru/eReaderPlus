@@ -26,6 +26,10 @@ describe('PDF', () => {
     expect(page).toContain('<meta name="viewport" content="width=600, height=800"/>');
     expect(page).toContain('src="/__ereader__/pdf-page.js"');
     expect(page).toContain('data-source="../../source.pdf" data-page="3"');
+
+    // The cover is drawn after the import returns (Node has no canvas to draw it on).
+    expect(book.cover).toBeNull();
+    expect(await book.pendingCover).toBeNull();
   });
 
   it('maps the outline to pages', async () => {

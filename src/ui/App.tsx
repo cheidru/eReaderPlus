@@ -20,6 +20,7 @@ import { DEFAULT_LIBRARY_PREFS, DEFAULT_SETTINGS, type EntryFlags, type LibraryE
 import { detectPlatform, type EngineInfo, type FileRef } from '../platform';
 import { AboutDialog } from './AboutDialog';
 import { CollectionsDialog, ConfirmDialog, PromptDialog } from './Dialogs';
+import { DrawingCovers, type ImportingBook } from './library/BookItems';
 import { LibraryView } from './library/LibraryView';
 import type { BookHandlers, ToggleFlag } from './library/shelfInfo';
 import { BookDetails } from './pages/BookDetails';
@@ -71,7 +72,13 @@ export function App() {
   const [scanning, setScanning] = useState(false);
   const [lastScan, setLastScan] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  /** Book files being imported, shown as cards until their books are in the library. */
+  const [importing, setImporting] = useState<ImportingBook[]>([]);
+  const [drawingCovers, setDrawingCovers] = useState<ReadonlySet<string>>(new Set());
   const back = useRef<() => boolean>(() => false);
+  /** The current view, for imports that finish after the user has moved on. */
+  const viewRef = useRef(view);
+  viewRef.current = view;
 
   const refreshLibrary = useCallback(async () => {
     if (!platform) return;
@@ -80,29 +87,56 @@ export function App() {
     setCollectionNames(names);
   }, [platform]);
 
-  const openFile = useCallback(
-    async (file: FileRef) => {
-      if (!platform) return;
-      setError(null);
-      setBusy(`Importing ${file.name}…`);
-      try {
-        const { entry } = await addBook(platform, file);
-        await refreshLibrary();
-        setView({ kind: 'reader', bookId: entry.id, from: 'library' });
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setBusy(null);
-      }
-    },
-    [platform, refreshLibrary],
-  );
-
   const showNotice = useCallback((text: string) => {
     window.clearTimeout(noticeTimer.current);
     setNotice(text);
     noticeTimer.current = window.setTimeout(() => setNotice(null), NOTICE_MS);
   }, []);
+
+  /** Shows a book's placeholder cover as being drawn until `coverReady` settles, then the cover. */
+  const followCover = useCallback(
+    (bookId: string, coverReady: Promise<void> | null) => {
+      if (!coverReady) return;
+      setDrawingCovers((ids) => new Set(ids).add(bookId));
+      void coverReady.then(refreshLibrary).finally(() =>
+        setDrawingCovers((ids) => {
+          const next = new Set(ids);
+          next.delete(bookId);
+          return next;
+        }),
+      );
+    },
+    [refreshLibrary],
+  );
+
+  const showImporting = useCallback((file: FileRef) => {
+    const book = { key: crypto.randomUUID(), fileName: file.name };
+    setImporting((list) => [...list, book]);
+    return () => setImporting((list) => list.filter((b) => b !== book));
+  }, []);
+
+  const openFile = useCallback(
+    async (file: FileRef) => {
+      if (!platform) return;
+      setError(null);
+      const done = showImporting(file);
+      const startView = viewRef.current;
+      try {
+        const { entry, isNew, coverReady } = await addBook(platform, file);
+        await refreshLibrary();
+        if (isNew) followCover(entry.id, coverReady);
+        // Opens the book, unless the user has gone on to read another one (or to Settings) meanwhile.
+        const current = viewRef.current;
+        if (current === startView || current.kind === 'library' || current.kind === 'details') setView({ kind: 'reader', bookId: entry.id, from: 'library' });
+        else showNotice(`Added "${entry.title}"`);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        done();
+      }
+    },
+    [platform, refreshLibrary, followCover, showImporting, showNotice],
+  );
 
   /** Imports new books from the watched folders, with progress in a snackbar, like ReadEra's file scan. */
   const runScan = useCallback(async () => {
@@ -110,7 +144,20 @@ export function App() {
     setScanning(true);
     setBusy('Scanning folders…');
     try {
-      const result = await scanWatchedFolders(platform, (done, total) => setBusy(`Adding books from folders… ${done} of ${total}`));
+      let importingDone = () => {};
+      const result = await scanWatchedFolders(platform, {
+        onProgress: (done, total) => setBusy(`Adding books from folders… ${done} of ${total}`),
+        onImporting: (file) => {
+          importingDone();
+          importingDone = showImporting(file);
+        },
+        // Each book shows up as soon as it is added, not when the whole scan is done.
+        onAdded: (entry, coverReady) => {
+          importingDone();
+          followCover(entry.id, coverReady);
+          void refreshLibrary();
+        },
+      }).finally(() => importingDone());
       setLastScan(describeScan(result));
       if (result.added > 0) {
         await refreshLibrary();
@@ -122,7 +169,7 @@ export function App() {
       setScanning(false);
       setBusy(null);
     }
-  }, [platform, refreshLibrary, showNotice]);
+  }, [platform, refreshLibrary, showNotice, showImporting, followCover]);
 
   useEffect(() => {
     if (!platform) return;
@@ -251,150 +298,153 @@ export function App() {
   const collectionsEntry = modal?.kind === 'collections' ? entries.find((e) => e.id === modal.bookId) : undefined;
 
   return (
-    <div
-      className="app"
-      data-ui={prefs.appTheme}
-      style={themeStyle(prefs.colorTheme, prefs.appTheme)}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={(e) => e.currentTarget === e.target && setDragging(false)}
-      onDrop={onDrop}
-    >
-      {engine && !engine.upToDate && (
-        <div className="app-banner">
-          Your {engine.engine} ({engine.version}) is outdated, so some books may not display correctly.
-          {engine.updateUrl && (
-            <button type="button" className="link-button" onClick={() => void platform.openExternal(engine.updateUrl!)}>
-              Update it
-            </button>
-          )}
-        </div>
-      )}
+    <DrawingCovers.Provider value={drawingCovers}>
+      <div
+        className="app"
+        data-ui={prefs.appTheme}
+        style={themeStyle(prefs.colorTheme, prefs.appTheme)}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={(e) => e.currentTarget === e.target && setDragging(false)}
+        onDrop={onDrop}
+      >
+        {engine && !engine.upToDate && (
+          <div className="app-banner">
+            Your {engine.engine} ({engine.version}) is outdated, so some books may not display correctly.
+            {engine.updateUrl && (
+              <button type="button" className="link-button" onClick={() => void platform.openExternal(engine.updateUrl!)}>
+                Update it
+              </button>
+            )}
+          </div>
+        )}
 
-      {view.kind === 'reader' ? (
-        <ReaderView
-          key={view.bookId}
-          platform={platform}
-          bookId={view.bookId}
-          settings={settings}
-          onSettingsChange={updateSettings}
-          onClose={closeReader}
-          onError={setError}
-        />
-      ) : view.kind === 'settings' ? (
-        <SettingsPage
-          prefs={prefs}
-          folders={{
-            folders: watchedFolders,
-            scanning,
-            lastScan,
-            onAdd: () => setView({ kind: 'folderPicker' }),
-            onRemove: (folder) => {
-              const next = watchedFolders.filter((f) => f !== folder);
-              setWatchedFolders(next);
-              void saveWatchedFolders(platform, next);
-            },
-            onScan: () => void runScan(),
-          }}
-          engine={engine}
-          onChange={updatePrefs}
-          onBack={() => setView({ kind: 'library' })}
-          onAbout={() => setModal({ kind: 'about' })}
-        />
-      ) : view.kind === 'folderPicker' ? (
-        <FolderPicker
-          platform={platform}
-          onPick={(folder) => {
-            const next = withFolder(watchedFolders, folder);
-            setWatchedFolders(next);
-            setView({ kind: 'settings' });
-            void saveWatchedFolders(platform, next).then(runScan);
-          }}
-          onCancel={() => setView({ kind: 'settings' })}
-        />
-      ) : detailsEntry ? (
-        <BookDetails
-          platform={platform}
-          entry={detailsEntry}
-          books={books}
-          onBack={() => setView({ kind: 'library' })}
-          onAuthor={(author) => {
-            setLocation({ shelf: 'authors', group: author });
-            setView({ kind: 'library' });
-          }}
-          onSeries={(name) => {
-            setLocation({ shelf: 'series', group: name });
-            setView({ kind: 'library' });
-          }}
-          onCollection={(name) => {
-            setLocation({ shelf: 'collections', group: name });
-            setView({ kind: 'library' });
-          }}
-        />
-      ) : (
-        <LibraryView
-          platform={platform}
-          entries={entries}
-          collections={allCollections}
-          prefs={prefs}
-          location={location}
-          onLocationChange={setLocation}
-          onPrefsChange={updatePrefs}
-          books={books}
-          onOpenFile={(file) => {
-            const existing = entries.find((e) => e.source === file.ref);
-            if (existing) books.onOpen(existing.id);
-            else void openFile(file);
-          }}
-          onAdd={() => void pickFile()}
-          onCreateCollection={() => setModal({ kind: 'newCollection' })}
-          onDeleteCollection={(name) =>
-            setModal({
-              kind: 'confirm',
-              title: 'Delete collection?',
-              message: `The collection "${name}" will be deleted. Its books stay in the library.`,
-              confirmLabel: 'Delete',
-              onConfirm: () => {
-                setLocation({ shelf: 'collections' });
-                void deleteCollection(platform, name).then(refreshLibrary);
+        {view.kind === 'reader' ? (
+          <ReaderView
+            key={view.bookId}
+            platform={platform}
+            bookId={view.bookId}
+            settings={settings}
+            onSettingsChange={updateSettings}
+            onClose={closeReader}
+            onError={setError}
+          />
+        ) : view.kind === 'settings' ? (
+          <SettingsPage
+            prefs={prefs}
+            folders={{
+              folders: watchedFolders,
+              scanning,
+              lastScan,
+              onAdd: () => setView({ kind: 'folderPicker' }),
+              onRemove: (folder) => {
+                const next = watchedFolders.filter((f) => f !== folder);
+                setWatchedFolders(next);
+                void saveWatchedFolders(platform, next);
               },
-            })
-          }
-          onSettings={() => setView({ kind: 'settings' })}
-          onAbout={() => setModal({ kind: 'about' })}
-        />
-      )}
+              onScan: () => void runScan(),
+            }}
+            engine={engine}
+            onChange={updatePrefs}
+            onBack={() => setView({ kind: 'library' })}
+            onAbout={() => setModal({ kind: 'about' })}
+          />
+        ) : view.kind === 'folderPicker' ? (
+          <FolderPicker
+            platform={platform}
+            onPick={(folder) => {
+              const next = withFolder(watchedFolders, folder);
+              setWatchedFolders(next);
+              setView({ kind: 'settings' });
+              void saveWatchedFolders(platform, next).then(runScan);
+            }}
+            onCancel={() => setView({ kind: 'settings' })}
+          />
+        ) : detailsEntry ? (
+          <BookDetails
+            platform={platform}
+            entry={detailsEntry}
+            books={books}
+            onBack={() => setView({ kind: 'library' })}
+            onAuthor={(author) => {
+              setLocation({ shelf: 'authors', group: author });
+              setView({ kind: 'library' });
+            }}
+            onSeries={(name) => {
+              setLocation({ shelf: 'series', group: name });
+              setView({ kind: 'library' });
+            }}
+            onCollection={(name) => {
+              setLocation({ shelf: 'collections', group: name });
+              setView({ kind: 'library' });
+            }}
+          />
+        ) : (
+          <LibraryView
+            platform={platform}
+            entries={entries}
+            importing={importing}
+            collections={allCollections}
+            prefs={prefs}
+            location={location}
+            onLocationChange={setLocation}
+            onPrefsChange={updatePrefs}
+            books={books}
+            onOpenFile={(file) => {
+              const existing = entries.find((e) => e.source === file.ref);
+              if (existing) books.onOpen(existing.id);
+              else void openFile(file);
+            }}
+            onAdd={() => void pickFile()}
+            onCreateCollection={() => setModal({ kind: 'newCollection' })}
+            onDeleteCollection={(name) =>
+              setModal({
+                kind: 'confirm',
+                title: 'Delete collection?',
+                message: `The collection "${name}" will be deleted. Its books stay in the library.`,
+                confirmLabel: 'Delete',
+                onConfirm: () => {
+                  setLocation({ shelf: 'collections' });
+                  void deleteCollection(platform, name).then(refreshLibrary);
+                },
+              })
+            }
+            onSettings={() => setView({ kind: 'settings' })}
+            onAbout={() => setModal({ kind: 'about' })}
+          />
+        )}
 
-      {modal?.kind === 'about' && engine && <AboutDialog engine={engine} onClose={() => setModal(null)} />}
-      {modal?.kind === 'confirm' && <ConfirmDialog title={modal.title} message={modal.message} confirmLabel={modal.confirmLabel} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
-      {modal?.kind === 'newCollection' && <PromptDialog title="New collection" label="Collection name" confirmLabel="Create" onSubmit={createCollection} onClose={() => setModal(null)} />}
-      {collectionsEntry && (
-        <CollectionsDialog
-          bookTitle={collectionsEntry.title}
-          names={allCollections}
-          selected={collectionsEntry.collections ?? []}
-          onChange={(selected) => setFlags(collectionsEntry.id, { collections: selected })}
-          onCreate={createCollection}
-          onClose={() => setModal(null)}
-        />
-      )}
-      {dragging && <div className="drop-overlay">Drop a book to open it</div>}
-      {busy && <div className="toast">{busy}</div>}
-      {notice && !busy && (
-        <div className="toast" role="status">
-          {notice}
-        </div>
-      )}
-      {error && (
-        <div className="toast toast-error" role="alert">
-          {error}
-          <button type="button" className="link-button" onClick={() => setError(null)}>
-            Dismiss
-          </button>
-        </div>
-      )}
-    </div>
+        {modal?.kind === 'about' && engine && <AboutDialog engine={engine} onClose={() => setModal(null)} />}
+        {modal?.kind === 'confirm' && <ConfirmDialog title={modal.title} message={modal.message} confirmLabel={modal.confirmLabel} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
+        {modal?.kind === 'newCollection' && <PromptDialog title="New collection" label="Collection name" confirmLabel="Create" onSubmit={createCollection} onClose={() => setModal(null)} />}
+        {collectionsEntry && (
+          <CollectionsDialog
+            bookTitle={collectionsEntry.title}
+            names={allCollections}
+            selected={collectionsEntry.collections ?? []}
+            onChange={(selected) => setFlags(collectionsEntry.id, { collections: selected })}
+            onCreate={createCollection}
+            onClose={() => setModal(null)}
+          />
+        )}
+        {dragging && <div className="drop-overlay">Drop a book to open it</div>}
+        {busy && <div className="toast">{busy}</div>}
+        {notice && !busy && (
+          <div className="toast" role="status">
+            {notice}
+          </div>
+        )}
+        {error && (
+          <div className="toast toast-error" role="alert">
+            {error}
+            <button type="button" className="link-button" onClick={() => setError(null)}>
+              Dismiss
+            </button>
+          </div>
+        )}
+      </div>
+    </DrawingCovers.Provider>
   );
 }
