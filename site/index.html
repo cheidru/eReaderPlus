@@ -252,7 +252,7 @@
       }
 
       const release = document.getElementById('release');
-      const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' });
+      const dateFormat = new Intl.DateTimeFormat('en-GB', { dateStyle: 'long' });
       const megabytes = (bytes) => `${(bytes / 1024 / 1024).toFixed(0)} MB`;
 
       fetch('https://api.github.com/repos/cheidru/eReaderPlus/releases/latest', {
