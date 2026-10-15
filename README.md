@@ -45,6 +45,23 @@ regenerate those, run `node scripts/make-test-fixtures.mjs` (the Kindle and LIT 
 
 Packaging: `npm run dist:win` / `dist:mac` / `dist:linux` (installers in `release/`).
 
+## Releases
+
+Users install from the download page, https://cheidru.github.io/eReaderPlus/ (`site/`, published by
+`.github/workflows/pages.yml`; enable it once under Settings > Pages > Source: GitHub Actions). It links to the newest
+GitHub Release.
+
+To release, push a version tag: `git tag v0.2.0 && git push origin v0.2.0`. The Release workflow
+(`.github/workflows/release.yml`) takes the version from the tag, builds `eReaderPlus-Setup.exe` (with `latest.yml`
+for auto-update) and a signed `eReaderPlus.apk`, and publishes them as a GitHub Release. Tags with a suffix
+(`v1.0.0-beta.1`) become pre-releases, which the download page and auto-update skip.
+
+- **Android signing** (required): the secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
+  `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD` (Settings > Secrets and variables > Actions). Keep a backup of the
+  keystore and its passwords: Android only installs an update signed with the same key.
+- **Windows signing** (optional): without it, SmartScreen warns on first run ("More info > Run anyway"). The
+  workflow signs with Azure Artifact Signing when the `AZURE_*` secrets and variables listed in `release.yml` are set.
+
 Android needs JDK 21 and Android SDK 36 (Android Studio's bundled JBR works as `JAVA_HOME`):
 
 ```sh
@@ -56,8 +73,7 @@ npm run android:run     # or open android/ in Android Studio
 
 - **Desktop**: each Electron major ships a newer Chromium (about every 8 weeks; security fixes in between).
   Dependabot opens a PR for new Electron releases, and CI runs the unit and end-to-end tests on all three OSes.
-  Merge the PR, tag a release, and publish with `electron-builder --publish always`. Installed apps update through
-  electron-updater (set `publish:` in `electron-builder.yml` first). Shipping without warnings needs code-signing
-  certificates (Windows, Apple Developer ID).
+  Merge the PR and push a version tag (see Releases). Installed apps update through electron-updater. Shipping
+  without warnings needs code-signing certificates (Windows, Apple Developer ID).
 - **Android**: the WebView updates itself through Google Play. The app shows a warning with an update link when
   the WebView is older than `MIN_ENGINE_MAJOR` (`src/platform/platform.ts`).

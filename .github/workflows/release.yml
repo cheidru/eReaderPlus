@@ -1,0 +1,152 @@
+# Publishes a GitHub Release when a version tag is pushed:
+#   git tag v0.2.0 && git push origin v0.2.0
+# The release gets eReaderPlus-Setup.exe (+ latest.yml and the blockmap for auto-update) and eReaderPlus.apk.
+# The version in package.json and the Android build comes from the tag, so there is nothing to bump by hand.
+#
+# Repository secrets (Settings > Secrets and variables > Actions > Secrets):
+#   ANDROID_KEYSTORE_BASE64    the release keystore file, base64-encoded (required)
+#   ANDROID_KEYSTORE_PASSWORD  its password (required)
+#   ANDROID_KEY_ALIAS          the key's alias inside it (required)
+#   ANDROID_KEY_PASSWORD       the key's password (required; often the same as the keystore password)
+#   AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET
+#                              optional: Windows signing with Azure Artifact Signing (unsigned without them)
+# Repository variables (same page, Variables tab), only for Azure Artifact Signing:
+#   AZURE_SIGNING_ENDPOINT     e.g. https://weu.codesigning.azure.net/
+#   AZURE_SIGNING_ACCOUNT      the Artifact Signing account name
+#   AZURE_CERTIFICATE_PROFILE  the certificate profile name
+#   AZURE_PUBLISHER_NAME       the certificate's subject CN, i.e. your verified name
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency: release-${{ github.ref }}
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Version from tag
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Package installer
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_CERTIFICATE_PROFILE: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+          AZURE_PUBLISHER_NAME: ${{ vars.AZURE_PUBLISHER_NAME }}
+        run: |
+          args=(--win --publish never)
+          if [ -n "$AZURE_CLIENT_ID" ]; then
+            args+=(
+              "-c.win.azureSignOptions.endpoint=$AZURE_SIGNING_ENDPOINT"
+              "-c.win.azureSignOptions.codeSigningAccountName=$AZURE_SIGNING_ACCOUNT"
+              "-c.win.azureSignOptions.certificateProfileName=$AZURE_CERTIFICATE_PROFILE"
+              "-c.win.azureSignOptions.publisherName=$AZURE_PUBLISHER_NAME"
+            )
+          else
+            echo "::warning::Windows installer is unsigned: SmartScreen will warn users (see README, Releases)"
+          fi
+          npx electron-builder "${args[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            release/eReaderPlus-Setup.exe
+            release/eReaderPlus-Setup.exe.blockmap
+            release/latest.yml
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - name: Version from tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          npm version "$version" --no-git-tag-version --allow-same-version
+          IFS=. read -r major minor patch <<< "${version%%[-+]*}"
+          echo "name=$version" >> "$GITHUB_OUTPUT"
+          echo "code=$((major * 1000000 + minor * 1000 + patch))" >> "$GITHUB_OUTPUT"
+      - run: npm run android:sync
+      - name: Decode signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::Repository secret ANDROID_KEYSTORE_BASE64 is not set (see README, Releases)"
+            exit 1
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 --decode > "$RUNNER_TEMP/release.keystore"
+      - name: Build signed APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: >-
+          ./gradlew assembleRelease
+          -PappVersionCode=${{ steps.version.outputs.code }}
+          -PappVersionName=${{ steps.version.outputs.name }}
+      - name: Check the signature
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+          "$apksigner" verify --print-certs "$apk"
+          cp "$apk" eReaderPlus.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: eReaderPlus.apk
+          if-no-files-found: error
+
+  publish:
+    needs: [windows, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          flags=()
+          # Tags like v1.0.0-beta.1 become pre-releases, which /releases/latest and auto-update skip.
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" assets/* --verify-tag --generate-notes \
+            --title "eReaderPlus ${GITHUB_REF_NAME#v}" "${flags[@]}"
