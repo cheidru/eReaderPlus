@@ -6,6 +6,8 @@ import './Panels.css';
 interface Props {
   settings: ReaderSettings;
   fixedLayout: boolean;
+  /** Whether the book can show two pages side by side (text, and PDF). */
+  canSpread: boolean;
   onChange: (settings: ReaderSettings) => void;
   onClose: () => void;
 }
@@ -27,7 +29,7 @@ const FONTS = [
 const LINE_HEIGHTS = [0, 1.2, 1.4, 1.6, 1.8, 2];
 
 /** ReadEra's reader settings: a floating card of labeled sections. */
-export function SettingsPanel({ settings, fixedLayout, onChange, onClose }: Props) {
+export function SettingsPanel({ settings, fixedLayout, canSpread, onChange, onClose }: Props) {
   const set = <K extends keyof ReaderSettings>(key: K, value: ReaderSettings[K]) => onChange({ ...settings, [key]: value });
   const typographyDisabled = fixedLayout || !settings.overrideStyles;
   const lineIndex = Math.max(0, LINE_HEIGHTS.indexOf(settings.lineHeight));
@@ -110,7 +112,7 @@ export function SettingsPanel({ settings, fixedLayout, onChange, onClose }: Prop
         </Section>
       )}
 
-      {!fixedLayout && (
+      {canSpread && (
         <label className="rs-card rs-switch-row">
           <span>
             Two pages in landscape
@@ -121,8 +123,25 @@ export function SettingsPanel({ settings, fixedLayout, onChange, onClose }: Prop
             role="switch"
             className="switch"
             checked={settings.spread}
-            disabled={settings.flow !== 'paginated'}
+            disabled={!fixedLayout && settings.flow !== 'paginated'}
             onChange={(e) => set('spread', e.target.checked)}
+          />
+        </label>
+      )}
+
+      {canSpread && fixedLayout && (
+        <label className="rs-card rs-switch-row">
+          <span>
+            Cover alone
+            <small>The first page on its own, then pages 2–3, 4–5, … as in a printed book</small>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            className="switch"
+            checked={settings.spreadCover}
+            disabled={!settings.spread}
+            onChange={(e) => set('spreadCover', e.target.checked)}
           />
         </label>
       )}

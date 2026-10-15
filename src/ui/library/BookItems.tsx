@@ -32,13 +32,13 @@ export function BookToggles({ entry, books }: { entry: LibraryEntry; books: Book
         <Icon name={entry.favorite ? 'star' : 'starOutline'} />
       </button>
       <button type="button" className="icon-button toggle" aria-pressed={!!entry.toRead} aria-label="To read" title="To read" onClick={() => books.onToggle(entry.id, 'toRead')}>
-        <Icon name="clock" />
+        <Icon name="toRead" />
       </button>
       <button type="button" className="icon-button toggle" aria-pressed={!!entry.finished} aria-label="Finished" title="Finished" onClick={() => books.onToggle(entry.id, 'finished')}>
-        <Icon name="doneAll" />
+        <Icon name="finished" />
       </button>
       <button type="button" className="icon-button toggle" aria-pressed={inCollection} aria-label="Collections" title="Collections" onClick={() => books.onCollections(entry.id)}>
-        <Icon name="shelf" />
+        <Icon name="collections" />
       </button>
     </>
   );
@@ -85,7 +85,7 @@ export function BookCard({ platform, entry, books, onMenu }: ItemProps) {
   );
 }
 
-/** Plain cover tile, like the iPad Books library: the cover, its progress or a NEW badge, and a "…" button. */
+/** Plain cover tile, like the iPad Books library: the cover, its file format (checked when finished, NEW when unopened), and a "…" button. */
 export function ShelfTile({ platform, entry, books, onMenu }: ItemProps) {
   const percent = percentRead(entry);
   return (
@@ -96,16 +96,11 @@ export function ShelfTile({ platform, entry, books, onMenu }: ItemProps) {
         </span>
       </button>
       <div className="tile-footer">
-        {entry.finished ? (
-          <span className="tile-status">
-            <Icon name="check" className="tile-check" />
-            Finished
-          </span>
-        ) : percent > 0 ? (
-          <span className="tile-status">{percent}%</span>
-        ) : (
-          <span className="tile-badge">New</span>
-        )}
+        <span className="tile-status" title={entry.finished ? 'Finished' : undefined}>
+          {entry.finished && <Icon name="check" className="tile-check" />}
+          {formatLabel(entry.format)}
+          {!entry.finished && percent === 0 && <span className="tile-badge">New</span>}
+        </span>
         <button type="button" className="icon-button tile-more" aria-label={`More actions for ${entry.title}`} onClick={(e) => onMenu(e.currentTarget, entry)}>
           <Icon name="moreHoriz" />
         </button>

@@ -136,7 +136,7 @@ export function CollectionsDialog({ bookTitle, names, selected, onChange, onCrea
             <li key={name}>
               <label className="check-row">
                 <input type="checkbox" checked={selected.includes(name)} onChange={() => toggle(name)} />
-                <Icon name="shelf" />
+                <Icon name="collections" />
                 <span>{name}</span>
               </label>
             </li>

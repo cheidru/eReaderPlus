@@ -1,21 +1,26 @@
 /*
- * App colors (everything around the book). Dark is the default, after ReadEra: a teal app bar over a
- * dark navy page with slate cards and amber accents. The book's own colors come from ReaderSettings.theme.
+ * App colors (everything around the book). The color theme chosen in Settings sets most of them on .app
+ * (src/ui/themes.ts), for the light or dark app theme; these, the default (Dusk, dark), apply until it does. The book's
+ * own colors come from ReaderSettings.theme.
  */
 :root {
-  --bar: #00617c;
+  --bar: #3d2c63;
+  --bar-accent: #c3a6ff;
+  --accent-on-dark: #ffb36b;
+  --panel: #2e283b;
+  --panel-card: #3d354d;
   --bar-text: #ffffff;
   --bar-muted: rgb(255 255 255 / 0.72);
-  --bg: #0b1a21;
-  --surface: #1c2b33;
-  --surface-hover: #253740;
-  --menu: #353c41;
-  --text: #eef2f4;
-  --text-muted: #94a4ac;
-  --border: #2b3b44;
-  --accent: #ffc107;
-  --accent-text: #1b1400;
-  --highlight: #3db3d9;
+  --bg: #14111b;
+  --surface: #201b2b;
+  --surface-hover: #2a2437;
+  --menu: #2e283b;
+  --text: #efebf5;
+  --text-muted: #a69db6;
+  --border: #332c42;
+  --accent: #ffb36b;
+  --accent-text: #241200;
+  --highlight: #b693ff;
   --danger: #ef5350;
   --scrim: rgb(0 0 0 / 0.55);
   --shadow: 0 8px 28px rgb(0 0 0 / 0.5);
@@ -57,16 +62,6 @@ body {
 }
 
 .app[data-ui='light'] {
-  --bg: #e8eef1;
-  --surface: #ffffff;
-  --surface-hover: #f1f5f7;
-  --menu: #ffffff;
-  --text: #1b2a31;
-  --text-muted: #5c6e77;
-  --border: #d3dde2;
-  --accent: #c98a00;
-  --accent-text: #ffffff;
-  --highlight: #00799d;
   --danger: #c62828;
   --scrim: rgb(0 0 0 / 0.35);
   --shadow: 0 8px 28px rgb(0 0 0 / 0.18);
@@ -79,6 +74,15 @@ body {
   fill: currentColor;
   flex: none;
   display: block;
+}
+
+/* Line icons (reading glasses, "Aa"): a round pen as heavy as the filled icons look. */
+.icon .icon-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .app-unsupported {
@@ -171,12 +175,9 @@ body {
   border-bottom-color: var(--bar-text);
 }
 
+/* The bar is dark in either app theme. */
 .app-bar .button-text {
-  color: var(--accent);
-}
-
-.app[data-ui='light'] .app-bar .button-text {
-  color: #ffd54f;
+  color: var(--accent-on-dark);
 }
 
 /* --- Buttons --- */
@@ -332,7 +333,7 @@ body {
 }
 
 .toast .link-button {
-  color: #ffc107;
+  color: var(--accent-on-dark);
   text-decoration: none;
   font-weight: 600;
   text-transform: uppercase;

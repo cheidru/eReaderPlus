@@ -161,6 +161,93 @@
   line-height: 1.4;
 }
 
+/* A setting with its choices under the text (after LingoDrill's Appearance settings). */
+.settings-choice {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75rem;
+  cursor: default;
+}
+
+.settings-choice:hover:not(:disabled) {
+  background: none;
+}
+
+.settings-seg {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 0.2rem;
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.settings-seg-button {
+  appearance: none;
+  min-width: 6rem;
+  padding: 0.5rem 1.1rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-seg-button[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--highlight) 24%, var(--surface));
+  color: var(--text);
+}
+
+.settings-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.settings-swatch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.95rem 0.45rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-swatch:hover {
+  color: var(--text);
+}
+
+.settings-swatch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.settings-swatch:has(input:checked) {
+  border-color: var(--highlight);
+  background: color-mix(in srgb, var(--highlight) 18%, var(--surface));
+  color: var(--text);
+}
+
+.settings-swatch:has(input:focus-visible) {
+  outline: 2px solid var(--highlight);
+  outline-offset: 2px;
+}
+
+.settings-swatch-dot {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15);
+}
+
 .settings-radio {
   width: 1.3rem;
   height: 1.3rem;

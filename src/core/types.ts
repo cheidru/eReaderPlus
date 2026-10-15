@@ -80,6 +80,10 @@ export type EntryFlags = Pick<LibraryEntry, 'favorite' | 'toRead' | 'finished' |
 
 export type LibraryLayout = 'cards' | 'shelf';
 export type AppTheme = 'dark' | 'light';
+/** Color themes of the app around the book (src/ui/themes.ts); 'readera' is the look the app started with. */
+export type ColorTheme = 'ink' | 'paper' | 'forest' | 'dusk' | 'readera';
+/** In the order Settings offers them: the default first. */
+export const ALL_COLOR_THEMES: ColorTheme[] = ['dusk', 'ink', 'paper', 'forest', 'readera'];
 export type SortKey = 'title' | 'author' | 'series' | 'format' | 'added' | 'read';
 
 export interface LibraryFilter {
@@ -93,6 +97,8 @@ export interface LibraryPrefs {
   layout: LibraryLayout;
   /** Colors of the app around the book (the book's own colors are ReaderSettings.theme). */
   appTheme: AppTheme;
+  /** Colors of the bars, highlights and accents, in either app theme. */
+  colorTheme: ColorTheme;
   sort: SortKey;
   filter: LibraryFilter;
 }
@@ -100,6 +106,7 @@ export interface LibraryPrefs {
 export const DEFAULT_LIBRARY_PREFS: LibraryPrefs = {
   layout: 'cards',
   appTheme: 'dark',
+  colorTheme: 'dusk',
   sort: 'read',
   filter: { formats: [], hideFinished: false },
 };
@@ -122,8 +129,10 @@ export interface ReaderSettings {
   margin: number;
   /** Extra thickness of the letters, 0 (as published) to FONT_WEIGHT_MAX. */
   fontWeight: number;
-  /** Paginated text shows two pages side by side when the window is in landscape. */
+  /** Paginated text and PDF show two pages side by side when the window is in landscape. */
   spread: boolean;
+  /** PDF spreads show the first page alone, then pages 2–3, 4–5, … as in a printed book. */
+  spreadCover: boolean;
   /** When false, the reader injects no typography overrides at all (publisher layout). */
   overrideStyles: boolean;
 }
@@ -137,6 +146,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   margin: 32,
   fontWeight: 0,
   spread: false,
+  spreadCover: false,
   overrideStyles: true,
 };
 

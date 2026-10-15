@@ -183,11 +183,11 @@
   color: inherit;
 }
 
-/* --- Display settings: ReadEra's floating dark card, the same in every app theme --- */
+/* --- Display settings: a floating dark card in the color theme's panel colors, in either app theme --- */
 
 .panel-settings {
-  --rs-bg: #333638;
-  --rs-card: #45494c;
+  --rs-bg: var(--panel);
+  --rs-card: var(--panel-card);
   --rs-text: #ffffff;
   --rs-muted: #b5bdc2;
   top: calc(0.5rem + var(--safe-top));
@@ -222,7 +222,7 @@
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  color: #4fc3f7;
+  color: var(--bar-accent);
 }
 
 .rs-card {
@@ -286,7 +286,7 @@
 
 .rs-range {
   width: 100%;
-  accent-color: #ffc107;
+  accent-color: var(--accent-on-dark);
 }
 
 .rs-switch-row {
@@ -307,7 +307,7 @@
 }
 
 .rs-switch-row .switch {
-  --accent: #ffc107;
+  --accent: var(--accent-on-dark);
   --text: #ffffff;
 }
 
@@ -330,7 +330,7 @@
 }
 
 .segment[aria-pressed='true'] {
-  border-color: #ffc107;
+  border-color: var(--accent-on-dark);
   font-weight: 600;
 }
 

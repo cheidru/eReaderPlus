@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { bookTexts, findInTexts, isSearchable } from '../../core/booksearch';
 import { loadManifest } from '../../core/import';
 import { loadProgress, markOpened, overallProgress, saveProgress } from '../../core/library';
-import { MESSAGE_TAG, parseFrameMessage, type FrameSettings, type GotoTarget, type HostMessage } from '../../core/messages';
+import { MESSAGE_TAG, parseFrameMessage, type FixedSpread, type FrameSettings, type GotoTarget, type HostMessage } from '../../core/messages';
 import { splitFragment } from '../../core/paths';
+import { spreadEnd, spreadFits, spreadStart } from '../../core/spread';
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP, type BookManifest, type Progress, type ReaderSettings, type TocItem } from '../../core/types';
 import { bookUrl, type Platform } from '../../platform';
 import { Icon } from '../icons';
@@ -42,6 +43,8 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
   const [chromeVisible, setChromeVisible] = useState(true);
   const [panel, setPanel] = useState<Panel>(null);
   const [search, setSearch] = useState<SearchState>(NO_SEARCH);
+  /** Whether the book frame is landscape and wide enough for two pages (the paginator decides the same for text). */
+  const [frameFitsSpread, setFrameFitsSpread] = useState(false);
   /** Stops reading the book's text for search when the book is closed. */
   const searchAbort = useRef(new AbortController());
 
@@ -53,6 +56,8 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
   const lastWheel = useRef(0);
   /** Fixed layout: the zoom the reader chose, carried over to the pages that follow. */
   const fixedZoom = useRef({ zoom: 1, panX: 0.5 });
+  /** Whether Space, pressed while the app had the focus, holds the hand tool on a zoomed page. */
+  const handHeld = useRef(false);
   const saveTimer = useRef<number | undefined>(undefined);
   const pendingSave = useRef<Progress | null>(null);
   const origin = platform.bookOrigin(bookId);
@@ -89,10 +94,30 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
     if (progress) saveProgress(platform, bookId, progress).catch((e: unknown) => console.error('Saving reading position failed:', e));
   }, [platform, bookId]);
 
-  const frameSettings = useMemo<FrameSettings | null>(
-    () => (manifest ? { ...settings, layout: manifest.layout } : null),
-    [settings, manifest],
+  /** A PDF spread shows two pages (paired as spread.ts says): the page document of the first shows the second beside it. */
+  const pdfSpread = manifest?.format === 'pdf' && settings.spread && frameFitsSpread;
+  const coverAlone = settings.spreadCover;
+  /** The page whose document shows page `index`: the first of its spread. */
+  const shownBy = useCallback((index: number) => (pdfSpread ? spreadStart(index, coverAlone) : index), [pdfSpread, coverAlone]);
+  /** The last page shown, which counts as read. */
+  const lastShown = useCallback(
+    (index: number) => (pdfSpread && manifest ? spreadEnd(index, manifest.spine.length, coverAlone) : index),
+    [pdfSpread, manifest, coverAlone],
   );
+  const fixedSpread: FixedSpread | null = pdfSpread ? (coverAlone && spineIndex === 0 ? 'single' : 'pair') : null;
+
+  const frameSettings = useMemo<FrameSettings | null>(
+    () => (manifest ? { ...settings, layout: manifest.layout, fixedSpread } : null),
+    [settings, manifest, fixedSpread],
+  );
+
+  useEffect(() => {
+    const frame = iframeRef.current;
+    if (!frame) return;
+    const observer = new ResizeObserver(() => setFrameFitsSpread(spreadFits(frame.clientWidth, frame.clientHeight)));
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [manifest]);
 
   const post = useCallback(
     (message: HostMessage) => {
@@ -104,6 +129,11 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
   const navigate = useCallback(
     (index: number, target: GotoTarget) => {
       if (!manifest || index < 0 || index >= manifest.spine.length) return;
+      const start = shownBy(index);
+      if (start !== index) {
+        if (target.kind === 'search') target = { ...target, part: index - start };
+        index = start;
+      }
       if (index === spineIndex) {
         post({ tag: MESSAGE_TAG, type: 'goto', target });
       } else {
@@ -112,8 +142,13 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
         setSpineIndex(index);
       }
     },
-    [manifest, spineIndex, post],
+    [manifest, spineIndex, shownBy, post],
   );
+
+  // Turning a spread on (or the window to landscape, or the cover alone) shows the current page in its spread.
+  useEffect(() => {
+    if (shownBy(spineIndex) !== spineIndex) navigate(spineIndex, { kind: 'fraction', value: 0 });
+  }, [spineIndex, shownBy, navigate]);
 
   const navigateHref = useCallback(
     (href: string) => {
@@ -145,7 +180,7 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
         else setChromeVisible((v) => !v);
       } else if (key === 'ArrowRight') visualTurn(1);
       else if (key === 'ArrowLeft') visualTurn(-1);
-      else if (key === 'PageDown' || key === 'ArrowDown' || key === ' ') turn(1);
+      else if (key === 'PageDown' || key === 'ArrowDown') turn(1);
       else if (key === 'PageUp' || key === 'ArrowUp') turn(-1);
       else if (key === 'Home') navigate(0, { kind: 'fraction', value: 0 });
       else if (key === 'End' && manifest) navigate(manifest.spine.length - 1, { kind: 'end' });
@@ -171,14 +206,16 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
           pendingSave.current = {
             spineIndex,
             fraction: message.fraction,
-            overall: overallProgress(manifest, spineIndex, message.fraction),
+            overall: overallProgress(manifest, lastShown(spineIndex), message.fraction),
             updatedAt: Date.now(),
           };
           window.clearTimeout(saveTimer.current);
           saveTimer.current = window.setTimeout(flushSave, 400);
           break;
         case 'edge':
-          navigate(spineIndex + message.dir, message.dir === 1 ? { kind: 'fraction', value: 0 } : { kind: 'end' });
+          // Past the last page shown, or before the first (whose spread `navigate` finds).
+          if (message.dir === 1) navigate(lastShown(spineIndex) + 1, { kind: 'fraction', value: 0 });
+          else navigate(spineIndex - 1, { kind: 'end' });
           break;
         case 'tap':
           if (panel) setPanel(null);
@@ -219,7 +256,7 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [origin, manifest, settings, onSettingsChange, frameSettings, post, platform, spineIndex, navigate, navigateHref, panel, visualTurn, turn, handleKey, flushSave]);
+  }, [origin, manifest, settings, onSettingsChange, frameSettings, post, platform, spineIndex, lastShown, navigate, navigateHref, panel, visualTurn, turn, handleKey, flushSave]);
 
   // Push settings changes to the current document.
   useEffect(() => {
@@ -230,14 +267,33 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
-      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', ' ', 'Home', 'End', 'Escape'].includes(event.key)) {
+      // Space never turns pages: on a zoomed fixed page it holds the hand tool (paginator.ts).
+      if (event.key === ' ') {
+        event.preventDefault();
+        if (manifest?.layout === 'pre-paginated' && fixedZoom.current.zoom > 1 && !handHeld.current) {
+          post({ tag: MESSAGE_TAG, type: 'hand', on: true });
+          handHeld.current = true;
+        }
+        return;
+      }
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', 'Escape'].includes(event.key)) {
         event.preventDefault();
         handleKey(event.key);
       }
     };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key !== ' ' || !handHeld.current) return;
+      event.preventDefault();
+      handHeld.current = false;
+      post({ tag: MESSAGE_TAG, type: 'hand', on: false });
+    };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleKey]);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [handleKey, manifest, post]);
 
   useEffect(() => {
     // Created here, not at first render: React's StrictMode unmounts and remounts once in development.
@@ -305,7 +361,7 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
 
   if (!manifest) return <div className="reader reader-loading">Opening…</div>;
 
-  const overall = overallProgress(manifest, spineIndex, location.fraction);
+  const overall = overallProgress(manifest, lastShown(spineIndex), location.fraction);
   const chapterTitle = findTocLabel(manifest.toc, manifest.spine[spineIndex].href);
   const showPageNumbers = settings.flow === 'paginated' && manifest.layout === 'reflowable';
   const percent = Math.round(overall * 100);
@@ -439,7 +495,13 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
         />
       )}
       {panel === 'settings' && (
-        <SettingsPanel settings={settings} fixedLayout={manifest.layout === 'pre-paginated'} onChange={onSettingsChange} onClose={() => setPanel(null)} />
+        <SettingsPanel
+          settings={settings}
+          fixedLayout={manifest.layout === 'pre-paginated'}
+          canSpread={manifest.layout === 'reflowable' || manifest.format === 'pdf'}
+          onChange={onSettingsChange}
+          onClose={() => setPanel(null)}
+        />
       )}
     </div>
   );

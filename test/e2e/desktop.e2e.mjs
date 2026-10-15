@@ -405,6 +405,12 @@ async function frameWithText(page, text) {
   });
   const title = await page.locator('.reader-title').textContent();
   check('PDF title from metadata', () => assert.equal(title, 'PDF Sample'));
+  await page.keyboard.press(' ');
+  await first.frame.focus('body');
+  await page.keyboard.press(' ');
+  await page.waitForTimeout(500);
+  const afterSpace = page.frames().filter((f) => f.url().startsWith('book://')).map((f) => f.url().split('/').pop());
+  check('Space does not turn the page, from the app or the page', () => assert.deepEqual(afterSpace, ['0001.html']));
   await page.screenshot({ path: path.join(shots, '13-pdf.png') });
   const links = await first.frame.evaluate(() => [...document.querySelectorAll('.pdf-links a')].map((a) => a.getAttribute('href')));
   check('PDF link annotations become links', () => assert.deepEqual(links.sort(), ['0003.html', 'https://example.com/']));
@@ -440,6 +446,23 @@ async function frameWithText(page, text) {
   check('wheel scrolls a zoomed page instead of turning it', () => {
     assert.match(second.frame.url(), /0002\.html$/);
     assert.ok(panned.y < zoomed.y, `${zoomed.y} -> ${panned.y}`);
+  });
+  const cursor = () => second.frame.evaluate(() => getComputedStyle(document.body).cursor);
+  await page.keyboard.down(' ');
+  await page.waitForTimeout(200);
+  const handCursor = await cursor();
+  await page.mouse.down();
+  await page.mouse.move(450, 460, { steps: 5 });
+  const grabbingCursor = await cursor();
+  await page.mouse.up();
+  await page.keyboard.up(' ');
+  await page.waitForTimeout(200);
+  const dragged = await view(second.frame);
+  const releasedCursor = await cursor();
+  check('holding Space shows a hand that drags the zoomed page, without turning it', () => {
+    assert.deepEqual([handCursor, grabbingCursor, releasedCursor], ['grab', 'grabbing', 'auto']);
+    assert.ok(dragged.y > panned.y + 50, `${panned.y} -> ${dragged.y}`);
+    assert.match(second.frame.url(), /0002\.html$/);
   });
   for (let i = 0; i < 40; i++) await page.mouse.wheel(0, 400);
   await page.waitForTimeout(600);
@@ -477,11 +500,95 @@ async function frameWithText(page, text) {
     assert.equal(pdfMatch, 'Page Three');
   });
   await page.getByRole('button', { name: 'Close search' }).click();
+
+  // The window is landscape, so the setting shows pages 1–2 side by side, then page 3 alone.
+  const twoPages = async () => {
+    await page.getByRole('button', { name: 'Display settings' }).click();
+    await page.getByRole('switch', { name: /Two pages in landscape/ }).click();
+    await page.getByRole('button', { name: 'Close settings' }).click();
+  };
+  await twoPages();
+  await page.keyboard.press('Home');
+  const spreadFrame = await bookFrame(page, '0001.html');
+  await spreadFrame.waitForFunction(() => document.querySelector('[data-ereader-part="1"] .textLayer')?.textContent, null, { timeout: 15000 });
+  const pdfSpread = await spreadFrame.evaluate(() => {
+    const sheets = [...document.querySelectorAll('.pdf-sheet')];
+    const color = (sheet) => [...sheet.querySelector('canvas').getContext('2d').getImageData(2, 2, 1, 1).data.slice(0, 3)];
+    return {
+      colors: sheets.map(color),
+      left: sheets.map((sheet) => sheet.getBoundingClientRect().left),
+      text: sheets[1].querySelector('.textLayer').textContent,
+      width: document.documentElement.getBoundingClientRect().width,
+      screen: innerWidth,
+    };
+  });
+  await page.screenshot({ path: path.join(shots, '13c-pdf-two-pages.png') });
+  check('PDF two-page view shows the next page beside the first, fitted to the window', () => {
+    assert.ok(near(pdfSpread.colors[0], [200, 40, 40]) && near(pdfSpread.colors[1], [40, 160, 60]), JSON.stringify(pdfSpread.colors));
+    assert.ok(pdfSpread.left[1] > pdfSpread.left[0], JSON.stringify(pdfSpread.left));
+    assert.match(pdfSpread.text, /Page Two/);
+    assert.ok(pdfSpread.width <= pdfSpread.screen + 1, JSON.stringify(pdfSpread));
+  });
+  await page.getByRole('button', { name: 'Search in book' }).click();
+  await page.getByRole('searchbox', { name: 'Search in book' }).fill('page two');
+  await page.locator('.search-hit').first().waitFor();
+  await page.locator('.search-hit').first().click();
+  await spreadFrame.waitForFunction(() => CSS.highlights.get('ereader-search')?.size === 1, null, { timeout: 15000 });
+  const spreadMatch = await spreadFrame.evaluate(() => {
+    const range = [...CSS.highlights.get('ereader-search')][0];
+    return { text: range.toString(), part: range.startContainer.parentElement.closest('[data-ereader-part]').dataset.ereaderPart };
+  });
+  check('PDF search on the second page of a spread highlights it there', () => assert.deepEqual(spreadMatch, { text: 'Page Two', part: '1' }));
+  await page.getByRole('button', { name: 'Close search' }).click();
+  await page.getByRole('button', { name: 'Next page' }).click();
+  const lastSpread = await bookFrame(page, '0003.html');
+  await lastSpread.waitForFunction(() => document.documentElement.dataset.pdfRendered);
+  const lastSheets = await lastSpread.evaluate(() => document.querySelectorAll('.pdf-sheet').length);
+  check('PDF two-page view turns two pages at a time, the last page alone', () => assert.equal(lastSheets, 1));
+
+  // Cover alone: page 1 by itself in the middle, as large as the pages of a pair, then pages 2–3.
+  const coverAlone = async () => {
+    await page.getByRole('button', { name: 'Display settings' }).click();
+    await page.getByRole('switch', { name: /Cover alone/ }).click();
+    await page.getByRole('button', { name: 'Close settings' }).click();
+  };
+  await coverAlone();
+  const pairFrame = await bookFrame(page, '0002.html');
+  await pairFrame.waitForFunction(() => document.querySelector('[data-ereader-part="1"] .textLayer')?.textContent, null, { timeout: 15000 });
+  const pair = await pairFrame.evaluate(() => ({
+    text: [...document.querySelectorAll('.textLayer')].map((layer) => layer.textContent.trim()),
+    width: document.querySelector('.pdf-sheet').getBoundingClientRect().width,
+  }));
+  await page.keyboard.press('Home');
+  const coverFrame = await bookFrame(page, '0001.html');
+  await coverFrame.waitForFunction(() => document.documentElement.dataset.pdfRendered);
+  const coverView = await coverFrame.evaluate(() => {
+    const rect = document.querySelector('.pdf-sheet').getBoundingClientRect();
+    return { sheets: document.querySelectorAll('.pdf-sheet').length, center: rect.left + rect.width / 2, width: rect.width, screenCenter: innerWidth / 2 };
+  });
+  await page.screenshot({ path: path.join(shots, '13d-pdf-cover-alone.png') });
+  check('PDF cover alone: page 1 by itself in the middle, as large as a page of a pair, then pages 2–3 together', () => {
+    assert.deepEqual(pair.text, ['Page Two', 'Page Three']);
+    assert.equal(coverView.sheets, 1);
+    assert.ok(Math.abs(coverView.center - coverView.screenCenter) < 1, JSON.stringify(coverView));
+    assert.ok(Math.abs(coverView.width - pair.width) < 1, JSON.stringify({ coverView, pair }));
+  });
+  await coverAlone();
+  await twoPages();
+
   await page.getByRole('button', { name: 'Back to library' }).click();
   const cover = page.locator('.book-open[title="PDF Sample"] img');
   await cover.waitFor();
   const coverWidth = await cover.evaluate(async (img) => (await img.decode(), img.naturalWidth));
   check('PDF cover rendered at import', () => assert.ok(coverWidth > 0));
+  await page.getByRole('button', { name: 'Show as shelf' }).click();
+  const tileStatus = await page.locator('.shelf-tile:has(.book-open[title="PDF Sample"]) .tile-status').textContent();
+  check('shelf tiles show the file format under the cover', () => assert.equal(tileStatus, 'PDF'));
+  await page.screenshot({ path: path.join(shots, '13e-shelf-formats.png') });
+  await page.getByRole('button', { name: 'Show as cards' }).click();
+  const cards = await page.locator('.card-list').count();
+  check('the top bar button switches between shelf and cards', () => assert.equal(cards, 1));
+  await page.screenshot({ path: path.join(shots, '13f-cards.png') });
   await app.close();
 }
 {
@@ -626,7 +733,7 @@ async function frameWithText(page, text) {
   while (step > 0 && (await row(chain[step]).count()) === 0) step--;
   for (; step < chain.length; step++) {
     await row(chain[step]).click();
-    await page.locator('.app-bar-subtitle', { hasText: chain[step] }).waitFor();
+    await page.locator('.shelf-subtitle', { hasText: chain[step] }).waitFor();
   }
   const epubPath = path.join(watched, 'modern-web.epub');
   const fileRow = page.locator(`.file-row[title="${epubPath.replace(/\\/g, '\\\\')}"]`);
@@ -642,7 +749,7 @@ async function frameWithText(page, text) {
   await page.locator('.reader-title').waitFor();
   const opened = await page.locator('.reader-title').textContent();
   await page.getByRole('button', { name: 'Back to library' }).click();
-  const backIn = await page.locator('.app-bar-subtitle').textContent();
+  const backIn = await page.locator('.shelf-subtitle').textContent();
   await page.getByRole('button', { name: 'Menu' }).click();
   await page.locator('.drawer-item', { hasText: 'Books' }).click();
   await page.locator('.book-card').nth(1).waitFor();
@@ -659,6 +766,7 @@ async function frameWithText(page, text) {
   await app.close();
   await rm(folderData, { recursive: true, force: true });
 }
+
 
 await rm(userData, { recursive: true, force: true });
 console.log(results.join('\n'));

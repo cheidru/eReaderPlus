@@ -102,7 +102,6 @@ export function LibraryView(props: Props) {
     { label: 'Open book', onSelect: props.onAdd },
     { label: 'Sort by', submenu: true, onSelect: () => setMenu((m) => m && { kind: 'sort', anchor: m.anchor }) },
     { label: 'Filter', onSelect: () => setFilterOpen(true) },
-    { label: layout === 'shelf' ? 'Show as cards' : 'Show as shelf', onSelect: () => onPrefsChange({ ...prefs, layout: layout === 'shelf' ? 'cards' : 'shelf' }) },
     ...(location.shelf === 'collections' && location.group !== undefined
       ? [{ label: 'Delete collection', danger: true, onSelect: () => props.onDeleteCollection(location.group!) }]
       : []),
@@ -142,7 +141,7 @@ export function LibraryView(props: Props) {
     );
   const searchField = (
     <input
-      className={layout === 'shelf' ? 'shelf-search' : 'app-bar-search'}
+      className="shelf-search"
       autoFocus
       type="search"
       placeholder={`Search in ${title}`}
@@ -150,6 +149,13 @@ export function LibraryView(props: Props) {
       value={search ?? ''}
       onChange={(e) => setSearch(e.target.value)}
     />
+  );
+  const toggleLayout = () => onPrefsChange({ ...prefs, layout: layout === 'shelf' ? 'cards' : 'shelf' });
+  // Shows the layout it switches to.
+  const layoutButton = (
+    <button type="button" className="icon-button" aria-label={layout === 'shelf' ? 'Show as cards' : 'Show as shelf'} title={layout === 'shelf' ? 'Show as cards' : 'Show as shelf'} onClick={toggleLayout}>
+      <Icon name={layout === 'shelf' ? 'viewList' : 'viewGrid'} />
+    </button>
   );
   const moreButton = (
     <button type="button" className="icon-button" aria-label="More options" onClick={(e) => setMenu({ kind: 'main', anchor: e.currentTarget })}>
@@ -165,52 +171,36 @@ export function LibraryView(props: Props) {
 
   return (
     <div className="library" data-layout={layout}>
-      {layout === 'shelf' ? (
-        <header className="shelf-header">
-          {leading}
-          <div className="shelf-header-center">
-            {search !== null ? (
-              searchField
-            ) : (
-              <nav className="pill-tabs" aria-label="Shelves">
-                {SHELF_TABS.map((shelf) => (
-                  <button
-                    key={shelf}
-                    type="button"
-                    className="pill-tab"
-                    aria-current={location.shelf === shelf && !inGroup ? 'page' : undefined}
-                    onClick={() => goTo({ shelf })}
-                  >
-                    {SHELF_TAB_LABELS[shelf] ?? SHELVES[shelf].label}
-                  </button>
-                ))}
-                {searchButton}
-              </nav>
-            )}
-          </div>
-          {moreButton}
-        </header>
-      ) : (
-        <header className="app-bar">
-          {leading}
+      {/* Both layouts share the header with the shelf tabs. */}
+      <header className="shelf-header">
+        {leading}
+        <div className="shelf-header-center">
           {search !== null ? (
             searchField
-          ) : inFolders && location.group ? (
-            <div className="app-bar-heading">
-              <h1 className="app-bar-title">{title}</h1>
-              <span className="app-bar-subtitle">{location.group}</span>
-            </div>
           ) : (
-            <h1 className="app-bar-title">{title}</h1>
+            <nav className="pill-tabs" aria-label="Shelves">
+              {SHELF_TABS.map((shelf) => (
+                <button
+                  key={shelf}
+                  type="button"
+                  className="pill-tab"
+                  aria-current={location.shelf === shelf && !inGroup ? 'page' : undefined}
+                  onClick={() => goTo({ shelf })}
+                >
+                  {SHELF_TAB_LABELS[shelf] ?? SHELVES[shelf].label}
+                </button>
+              ))}
+              {searchButton}
+            </nav>
           )}
-          {searchButton}
-          {moreButton}
-        </header>
-      )}
+        </div>
+        {layoutButton}
+        {moreButton}
+      </header>
 
       <main className="library-content">
-        {layout === 'shelf' && (inGroup || !SHELF_TABS.includes(location.shelf)) && <h1 className="shelf-title">{title}</h1>}
-        {layout === 'shelf' && inFolders && location.group && <p className="shelf-subtitle">{location.group}</p>}
+        {(inGroup || !SHELF_TABS.includes(location.shelf)) && <h1 className="shelf-title">{title}</h1>}
+        {inFolders && location.group && <p className="shelf-subtitle">{location.group}</p>}
 
         {isFilterActive(prefs.filter) && !listsGroups && !listsFormats && !inFolders && (
           <div className="filter-bar">

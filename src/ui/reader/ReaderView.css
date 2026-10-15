@@ -206,7 +206,7 @@
 
 .reader-slider {
   --fill: 0%;
-  --track: #4fc3f7;
+  --track: var(--bar-accent);
   position: relative;
   display: block;
   width: 100%;
@@ -231,7 +231,7 @@
   margin-top: -6.5px;
   border-radius: 50%;
   background: var(--track);
-  box-shadow: 0 0 0 4px rgb(79 195 247 / 0.2);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--track) 20%, transparent);
 }
 
 .reader-slider::-moz-range-track {

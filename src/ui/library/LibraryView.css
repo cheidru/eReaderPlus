@@ -1,8 +1,16 @@
+/* Both layouts, and the header they share, sit on the page in the app's colors. */
 .library {
+  --shelf-bg: var(--bg);
+  --shelf-text: var(--text);
+  --shelf-muted: var(--text-muted);
+  --shelf-pill: var(--surface);
+  --shelf-pill-active: color-mix(in srgb, var(--highlight) 24%, var(--surface));
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  background: var(--shelf-bg);
+  color: var(--shelf-text);
 }
 
 .library-content {
@@ -385,8 +393,8 @@
   border-radius: 0.6rem;
   display: grid;
   place-items: center;
-  background: linear-gradient(160deg, #2196f3, #1257b8);
-  color: #ffd54f;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--bar) 75%, white), var(--bar));
+  color: var(--accent-on-dark);
 }
 
 .drawer-list {
@@ -432,25 +440,27 @@
 
 /* --- Shelf layout (plain, like the iPad Books library) --- */
 
-/* The page in the app's colors, as behind the cards, so both layouts sit on the same background. */
-.library[data-layout='shelf'] {
-  --shelf-bg: var(--bg);
-  --shelf-text: var(--text);
-  --shelf-muted: var(--text-muted);
-  --shelf-pill: var(--surface);
-  --shelf-pill-active: color-mix(in srgb, var(--highlight) 24%, var(--surface));
-  background: var(--shelf-bg);
-  color: var(--shelf-text);
-}
-
 .shelf-header {
   flex: none;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 0.5rem;
   padding: calc(0.5rem + var(--safe-top)) calc(0.5rem + var(--safe-right)) 0.5rem calc(0.5rem + var(--safe-left));
   color: var(--shelf-muted);
+}
+
+.library[data-layout='cards'] .shelf-title {
+  max-width: 90rem;
+  margin: 0.5rem auto 0.75rem;
+  padding: 0 0.25rem;
+  font-size: 1.4rem;
+}
+
+.library[data-layout='cards'] .shelf-subtitle {
+  max-width: 90rem;
+  margin: -0.5rem auto 0.75rem;
+  padding: 0 0.25rem;
 }
 
 .shelf-header-center {
@@ -532,6 +542,10 @@
   color: var(--shelf-text);
   font: inherit;
   outline: none;
+}
+
+.shelf-search::placeholder {
+  color: var(--shelf-muted);
 }
 
 .library[data-layout='shelf'] .library-content {
@@ -643,6 +657,7 @@
 }
 
 .tile-badge {
+  margin-left: 0.35rem;
   padding: 0.15rem 0.55rem;
   border-radius: 999px;
   background: #2b5fd9;

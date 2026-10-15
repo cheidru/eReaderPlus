@@ -81,6 +81,18 @@ html.ereader-fixed.ereader-fixed-scaled {
   transform: translate(var(--ereader-fixed-x), var(--ereader-fixed-y)) scale(var(--ereader-fixed-scale));
 }
 
+/* Space held over a zoomed page: an open hand, closed while dragging the page. */
+html.ereader-hand,
+html.ereader-hand * {
+  cursor: grab !important;
+  user-select: none !important;
+}
+
+html.ereader-hand.ereader-hand-drag,
+html.ereader-hand.ereader-hand-drag * {
+  cursor: grabbing !important;
+}
+
 /* --- Typography overrides (off in "publisher layout" mode) --- */
 
 html.ereader-override:not(.ereader-fixed) {

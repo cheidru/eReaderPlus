@@ -26,6 +26,7 @@ import { BookDetails } from './pages/BookDetails';
 import { FolderPicker } from './pages/FolderPicker';
 import { SettingsPage } from './pages/SettingsPage';
 import { ReaderView } from './reader/ReaderView';
+import { themeStyle } from './themes';
 
 /** How long a notice snackbar stays. */
 const NOTICE_MS = 5000;
@@ -253,6 +254,7 @@ export function App() {
     <div
       className="app"
       data-ui={prefs.appTheme}
+      style={themeStyle(prefs.colorTheme, prefs.appTheme)}
       onDragOver={(e) => {
         e.preventDefault();
         setDragging(true);

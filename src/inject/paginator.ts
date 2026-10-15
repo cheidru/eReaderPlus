@@ -4,6 +4,7 @@
  * It has no privileges: anything it does, the book's own scripts could do too.
  */
 import { MAX_ZOOM, MESSAGE_TAG, type FrameMessage, type FrameSettings, type GotoTarget, type HostMessage } from '../core/messages';
+import { spreadFits } from '../core/spread';
 import { findRange } from '../core/textsearch';
 
 (() => {
@@ -26,8 +27,6 @@ import { findRange } from '../core/textsearch';
     return settings?.flow === 'scrolled' ? 'scrolled' : 'paginated';
   };
 
-  /** Narrower than this, two pages side by side would be too cramped to read. */
-  const SPREAD_MIN_WIDTH = 640;
   /** Outline width added per step of the font weight setting. */
   const STROKE_PER_WEIGHT_STEP_EM = 0.012;
 
@@ -54,7 +53,7 @@ import { findRange } from '../core/textsearch';
 
   /** Two-page spreads apply to paginated text in a landscape window that is wide enough. */
   function updateSpread() {
-    const on = mode() === 'paginated' && !!settings?.spread && window.innerWidth > window.innerHeight && window.innerWidth >= SPREAD_MIN_WIDTH;
+    const on = mode() === 'paginated' && !!settings?.spread && spreadFits(window.innerWidth, window.innerHeight);
     root.classList.toggle('ereader-spread', on);
   }
 
@@ -81,14 +80,23 @@ import { findRange } from '../core/textsearch';
     const width = Number(/width\s*=\s*(\d+)/.exec(viewport)?.[1]);
     const height = Number(/height\s*=\s*(\d+)/.exec(viewport)?.[1]);
     const sized = width > 0 && height > 0;
+    // A spread (PDF) is fitted as two boxes as large as this page. A pair fills both (the next page goes in
+    // the other, or nothing); a page alone (the cover) is centered, as large as the pages of a pair.
+    const spread = sized ? (settings?.fixedSpread ?? null) : null;
     // A page without a size (comics: an image fitted to the screen) is as large as the screen.
-    fixed.width = sized ? width : window.innerWidth;
+    fixed.width = sized ? width * (spread === 'pair' ? 2 : 1) : window.innerWidth;
     fixed.height = sized ? height : window.innerHeight;
-    fixed.fit = sized ? Math.min(window.innerWidth / width, window.innerHeight / height) : 1;
+    fixed.fit = sized ? Math.min(window.innerWidth / (width * (spread ? 2 : 1)), window.innerHeight / height) : 1;
     root.style.setProperty('--ereader-fixed-width', `${fixed.width}px`);
     root.style.setProperty('--ereader-fixed-height', `${fixed.height}px`);
     applyFixedView();
     root.classList.add('ereader-fixed-scaled');
+    if ((root.dataset.ereaderSpread ?? null) !== spread) {
+      // The page renderer (pdf-page.ts) places its page and adds or removes the next one.
+      if (spread) root.dataset.ereaderSpread = spread;
+      else delete root.dataset.ereaderSpread;
+      window.dispatchEvent(new Event('ereader:spread'));
+    }
   }
 
   /** Scale, and how far the scaled page sticks out of the screen on each axis (negative: it fits). */
@@ -171,6 +179,61 @@ import { findRange } from '../core/textsearch';
     announceZoom();
   }
 
+  // --- Hand tool: while Space is held over a zoomed fixed page, dragging with the mouse pans it ---------
+
+  let hand = false;
+  /** Pointer position at the last move of a hand drag. */
+  let handDrag: { x: number; y: number } | null = null;
+  /** The click ending a hand drag is neither a tap nor a link click. */
+  let swallowClick = false;
+
+  /** Shows the hand cursor (paginator.css) and lets mouse drags pan, if the page is zoomed. */
+  function setHand(on: boolean) {
+    hand = on && mode() === 'fixed' && fixed.zoom > 1;
+    root.classList.toggle('ereader-hand', hand);
+    if (!hand) endHandDrag();
+  }
+
+  function endHandDrag() {
+    handDrag = null;
+    root.classList.remove('ereader-hand-drag');
+  }
+
+  window.addEventListener('pointerdown', (event) => {
+    if (!hand || event.button !== 0) return;
+    // Also keeps the focus where it is, so releasing Space reaches whoever saw it pressed.
+    event.preventDefault();
+    swallowClick = true;
+    handDrag = { x: event.clientX, y: event.clientY };
+    root.classList.add('ereader-hand-drag');
+    root.setPointerCapture(event.pointerId);
+  });
+
+  window.addEventListener(
+    'pointermove',
+    (event) => {
+      if (!handDrag) return;
+      panFixed(event.clientX - handDrag.x, event.clientY - handDrag.y);
+      handDrag = { x: event.clientX, y: event.clientY };
+    },
+    { passive: true },
+  );
+
+  window.addEventListener('pointerup', endHandDrag);
+  window.addEventListener('pointercancel', endHandDrag);
+  window.addEventListener('blur', () => setHand(false));
+
+  window.addEventListener(
+    'click',
+    (event) => {
+      if (!swallowClick) return;
+      swallowClick = false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    },
+    true,
+  );
+
   // --- Search matches: highlighted with the CSS Custom Highlight API, which leaves the DOM untouched ---
 
   const HIGHLIGHT = 'ereader-search';
@@ -189,14 +252,16 @@ import { findRange } from '../core/textsearch';
   }
 
   /** Finds and highlights a match. Its page is the one holding the start of its first line box. */
-  function highlightMatch(target: { query: string; occurrence: number }): Range | null {
-    const range = document.body ? findRange(document.body, target.query, target.occurrence) : null;
+  function highlightMatch(target: { query: string; occurrence: number; part?: number }): Range | null {
+    // In a spread, only the text of the page that holds the match counts.
+    const scope = document.querySelector(`[data-ereader-part="${target.part ?? 0}"]`) ?? document.body;
+    const range = scope ? findRange(scope, target.query, target.occurrence) : null;
     if (range) CSS.highlights?.set(HIGHLIGHT, new Highlight(range));
     return range;
   }
 
   /** Page documents draw their text after loading (PDF's text layer): highlights a match once it appears. */
-  function highlightWhenPresent(target: { query: string; occurrence: number }) {
+  function highlightWhenPresent(target: { query: string; occurrence: number; part?: number }) {
     if (!document.body) return;
     const observer = new MutationObserver(() => {
       if (highlightMatch(target)) stop();
@@ -338,6 +403,7 @@ import { findRange } from '../core/textsearch';
     } else if (data.type === 'turn') turn(data.dir);
     else if (data.type === 'clearSearch') endSearch();
     else if (data.type === 'zoom' && Number.isFinite(data.zoom) && Number.isFinite(data.panX)) setFixedZoom(data.zoom, data.panX);
+    else if (data.type === 'hand') setHand(data.on === true);
   });
 
   // --- Layout tracking -------------------------------------------------------------------------
@@ -386,12 +452,22 @@ import { findRange } from '../core/textsearch';
 
   window.addEventListener('keydown', (event) => {
     if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || isEditable(event.target)) return;
-    const vertical = event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === ' ';
+    // Space never turns or scrolls pages: on a zoomed page it holds the hand tool.
+    if (event.key === ' ') {
+      event.preventDefault();
+      if (!hand) setHand(true);
+      return;
+    }
+    const vertical = event.key === 'ArrowUp' || event.key === 'ArrowDown';
     if (mode() === 'scrolled' && vertical) return;
-    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', ' ', 'Home', 'End', 'Escape'].includes(event.key)) {
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', 'Escape'].includes(event.key)) {
       event.preventDefault();
       post({ type: 'key', key: event.key });
     }
+  });
+
+  window.addEventListener('keyup', (event) => {
+    if (event.key === ' ') setHand(false);
   });
 
   /**

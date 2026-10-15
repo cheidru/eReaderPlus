@@ -5,6 +5,7 @@ import { decodeFb2 } from './fb2';
 import { importBook } from './import';
 import { comicSeries, epubSeries, fb2Series } from './series';
 import {
+  ALL_COLOR_THEMES,
   DEFAULT_LIBRARY_PREFS,
   DEFAULT_SETTINGS,
   type BookManifest,
@@ -140,7 +141,10 @@ export async function deleteCollection(platform: Platform, name: string): Promis
 
 export async function loadLibraryPrefs(platform: Platform): Promise<LibraryPrefs> {
   const stored = await platform.kvGet<Partial<LibraryPrefs>>(PREFS_KEY);
-  return { ...DEFAULT_LIBRARY_PREFS, ...stored, filter: { ...DEFAULT_LIBRARY_PREFS.filter, ...stored?.filter } };
+  const prefs = { ...DEFAULT_LIBRARY_PREFS, ...stored, filter: { ...DEFAULT_LIBRARY_PREFS.filter, ...stored?.filter } };
+  // A theme that has since been withdrawn falls back to the default.
+  if (!ALL_COLOR_THEMES.includes(prefs.colorTheme)) prefs.colorTheme = DEFAULT_LIBRARY_PREFS.colorTheme;
+  return prefs;
 }
 
 export async function saveLibraryPrefs(platform: Platform, prefs: LibraryPrefs): Promise<void> {

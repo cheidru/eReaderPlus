@@ -3,15 +3,15 @@ import type { BookFormat, LibraryEntry, Series, SortKey } from '../../core/types
 import type { IconName } from '../icons';
 
 export const SHELVES: Record<Shelf, { label: string; icon: IconName }> = {
-  reading: { label: 'Reading now', icon: 'reading' },
-  all: { label: 'Books', icon: 'book' },
+  reading: { label: 'Reading now', icon: 'readingNow' },
+  all: { label: 'Books', icon: 'books' },
   favorites: { label: 'Favorites', icon: 'star' },
-  toRead: { label: 'To read', icon: 'clock' },
-  finished: { label: 'Finished', icon: 'doneAll' },
+  toRead: { label: 'To read', icon: 'toRead' },
+  finished: { label: 'Finished', icon: 'finished' },
   authors: { label: 'Authors', icon: 'person' },
-  series: { label: 'Series', icon: 'tag' },
-  collections: { label: 'Collections', icon: 'shelf' },
-  formats: { label: 'Formats', icon: 'layers' },
+  series: { label: 'Series', icon: 'series' },
+  collections: { label: 'Collections', icon: 'collections' },
+  formats: { label: 'Formats', icon: 'formats' },
   folders: { label: 'Folders', icon: 'folder' },
 };
 

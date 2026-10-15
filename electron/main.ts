@@ -76,7 +76,8 @@ function createWindow(readerSession: Electron.Session): void {
     minWidth: 360,
     minHeight: 480,
     show: false,
-    backgroundColor: '#f6f5f2',
+    // The default app theme's page (Dusk, dark), so the window doesn't flash another color before the UI draws.
+    backgroundColor: '#14111b',
     autoHideMenuBar: true,
     webPreferences: {
       session: readerSession,
