@@ -18,6 +18,8 @@ export function AboutDialog({ engine, onClose }: Props) {
       }
     >
       <dl className="about-list">
+        <dt>Version</dt>
+        <dd>{__APP_VERSION__}</dd>
         <dt>Rendering engine</dt>
         <dd>
           {engine.engine} {engine.version}
