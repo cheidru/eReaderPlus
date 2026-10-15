@@ -36,6 +36,7 @@ npm install
 npm run dev:desktop     # Vite dev server + Electron
 npm test                # unit tests (parsers, injection, message validation)
 npm run test:e2e        # builds, generates samples/, drives the real Electron app with Playwright
+node scripts/make-icons.mjs  # renders the app icon for desktop, Android and the download page from one design
 npm run samples         # sample books in samples/ (modern-web.epub, hostile.epub, sample.fb2, sample.cbz, sample.mobi, …)
 ```
 
