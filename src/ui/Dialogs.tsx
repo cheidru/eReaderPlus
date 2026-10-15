@@ -45,6 +45,36 @@ export function Dialog({ title, onClose, children, actions, className }: DialogP
   );
 }
 
+/** Asked once, on the first run on Android: books are found in the device's folders only with this permission. */
+export function FolderAccessDialog({ onAllow, onClose }: { onAllow: () => void; onClose: () => void }) {
+  return (
+    <Dialog
+      title="Allow access to your files"
+      onClose={onClose}
+      actions={
+        <>
+          <button type="button" className="button-text" onClick={onClose}>
+            Not now
+          </button>
+          <button
+            type="button"
+            className="button-text"
+            onClick={() => {
+              onAllow();
+              onClose();
+            }}
+          >
+            Allow access
+          </button>
+        </>
+      }
+    >
+      <p className="dialog-message">eReaderPlus needs permission to read the files on this device to show your book folders and add the books in them.</p>
+      <p className="dialog-message">Android lists this as “All files access”. Turn it on for eReaderPlus, then come back.</p>
+    </Dialog>
+  );
+}
+
 export function ConfirmDialog({ title, message, confirmLabel, onConfirm, onClose }: { title: string; message: string; confirmLabel: string; onConfirm: () => void; onClose: () => void }) {
   return (
     <Dialog

@@ -68,11 +68,20 @@ public class BookWebViewClient extends BridgeWebViewClient {
         MIME.put("txt", "text/plain");
     }
 
+    /**
+     * The app's own page reads book files from https://localhost/__book__/&lt;bookId&gt;/&lt;path&gt;. The file is streamed
+     * from disk, so a large book never has to fit in the Java heap (as it did when it crossed the plugin bridge as
+     * base64). Book pages cannot use it: the Referer check below refuses them, and their CSP blocks the app origin.
+     */
+    static final String APP_BOOK_PREFIX = "/__book__/";
+
     private final Context context;
+    private final Bridge bridge;
 
     public BookWebViewClient(Bridge bridge) {
         super(bridge);
         this.context = bridge.getContext();
+        this.bridge = bridge;
     }
 
     static boolean isBookHost(String host) {
@@ -86,7 +95,25 @@ public class BookWebViewClient extends BridgeWebViewClient {
         // Defense in depth: book CSP already blocks the network; also refuse anything a book page asks for.
         String referer = request.getRequestHeaders().get("Referer");
         if (referer != null && isBookHost(Uri.parse(referer).getHost())) return status(403, "Forbidden");
+        String path = url.getPath();
+        if (path != null && path.startsWith(APP_BOOK_PREFIX) && bridge.getHost().equals(url.getHost())) return serveToApp(path);
         return super.shouldInterceptRequest(view, request);
+    }
+
+    private WebResourceResponse serveToApp(String path) {
+        String rest = path.substring(APP_BOOK_PREFIX.length());
+        int slash = rest.indexOf('/');
+        if (slash < 0) return status(404, "Not Found");
+        try {
+            File file = BookStorePlugin.resolveInBook(context, rest.substring(0, slash), rest.substring(slash + 1));
+            if (!file.isFile()) return status(404, "Not Found");
+            Map<String, String> headers = new HashMap<>();
+            headers.put("Cache-Control", "no-store");
+            headers.put("Content-Length", String.valueOf(file.length()));
+            return new WebResourceResponse("application/octet-stream", null, 200, "OK", headers, new FileInputStream(file));
+        } catch (IOException e) {
+            return status(404, "Not Found");
+        }
     }
 
     @Override

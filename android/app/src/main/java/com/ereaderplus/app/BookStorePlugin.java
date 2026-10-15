@@ -25,9 +25,7 @@ import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -230,32 +228,7 @@ public class BookStorePlugin extends Plugin {
         });
     }
 
-    @PluginMethod
-    public void readText(PluginCall call) {
-        io.execute(() -> {
-            try {
-                JSObject result = new JSObject();
-                result.put("text", new String(readFile(resolveInBook(call.getString("bookId"), call.getString("path"))), StandardCharsets.UTF_8));
-                call.resolve(result);
-            } catch (Exception e) {
-                call.reject(e.getMessage(), e);
-            }
-        });
-    }
-
-    @PluginMethod
-    public void readBinary(PluginCall call) {
-        io.execute(() -> {
-            try {
-                JSObject result = new JSObject();
-                byte[] data = readFile(resolveInBook(call.getString("bookId"), call.getString("path")));
-                result.put("base64", Base64.encodeToString(data, Base64.NO_WRAP));
-                call.resolve(result);
-            } catch (Exception e) {
-                call.reject(e.getMessage(), e);
-            }
-        });
-    }
+    // Book files are read by the WebView from BookWebViewClient.APP_BOOK_PREFIX, streamed from disk.
 
     @PluginMethod
     public void writeText(PluginCall call) {
@@ -537,15 +510,6 @@ public class BookStorePlugin extends Plugin {
 
     private File resolveInBook(String bookId, String relative) throws IOException {
         return resolveInBook(getContext(), bookId, relative);
-    }
-
-    private static byte[] readFile(File file) throws IOException {
-        try (InputStream in = new FileInputStream(file); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[64 * 1024];
-            int n;
-            while ((n = in.read(buffer)) > 0) out.write(buffer, 0, n);
-            return out.toByteArray();
-        }
     }
 
     private static void writeFile(File target, InputStream in) throws IOException {

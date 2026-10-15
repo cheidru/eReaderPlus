@@ -1,5 +1,6 @@
 import { registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
+import { encodePath } from '../core/paths';
 import { chromiumMajor, MIN_ENGINE_MAJOR, type FileRef, type FolderListing, type FoundBookFile, type Platform } from './platform';
 
 /** Native side: android/app/src/main/java/com/ereaderplus/app/BookStorePlugin.java */
@@ -9,8 +10,6 @@ interface BookStorePlugin {
   addListener(event: 'openFile', listener: (file: FileRef) => void): Promise<PluginListenerHandle>;
   extractArchive(options: { uri: string; bookId: string }): Promise<{ paths: string[] }>;
   copyRawFile(options: { uri: string; bookId: string; path: string }): Promise<void>;
-  readText(options: { bookId: string; path: string }): Promise<{ text: string }>;
-  readBinary(options: { bookId: string; path: string }): Promise<{ base64: string }>;
   writeText(options: { bookId: string; path: string; text: string }): Promise<void>;
   writeBinary(options: { bookId: string; path: string; base64: string }): Promise<void>;
   deleteBook(options: { bookId: string }): Promise<void>;
@@ -35,11 +34,14 @@ function toBase64(data: Uint8Array): string {
   return btoa(binary);
 }
 
-function fromBase64(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
-  return out;
+/**
+ * Reads a book file through BookWebViewClient, which streams it from disk. A large book (hundreds of MB) does not fit
+ * in the Java heap as the base64 string the plugin bridge would need.
+ */
+async function fetchBookFile(bookId: string, path: string): Promise<Response> {
+  const response = await fetch(`/__book__/${bookId}/${encodePath(path)}`, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Cannot read ${path}`);
+  return response;
 }
 
 export function createCapacitorPlatform(): Platform {
@@ -59,10 +61,10 @@ export function createCapacitorPlatform(): Platform {
     },
     copyRawFile: (file, bookId, path) => BookStore.copyRawFile({ uri: file.ref, bookId, path }),
     async readText(bookId, path) {
-      return (await BookStore.readText({ bookId, path })).text;
+      return (await fetchBookFile(bookId, path)).text();
     },
     async readBinary(bookId, path) {
-      return fromBase64((await BookStore.readBinary({ bookId, path })).base64);
+      return new Uint8Array(await (await fetchBookFile(bookId, path)).arrayBuffer());
     },
     writeText: (bookId, path, text) => BookStore.writeText({ bookId, path, text }),
     writeBinary: (bookId, path, data) => BookStore.writeBinary({ bookId, path, base64: toBase64(data) }),

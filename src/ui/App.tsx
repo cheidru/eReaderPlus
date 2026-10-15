@@ -20,7 +20,7 @@ import type { LibraryLocation } from '../core/shelves';
 import { DEFAULT_LIBRARY_PREFS, DEFAULT_SETTINGS, type EntryFlags, type LibraryEntry, type LibraryPrefs, type ReaderSettings } from '../core/types';
 import { detectPlatform, type EngineInfo, type FileRef } from '../platform';
 import { AboutDialog } from './AboutDialog';
-import { CollectionsDialog, ConfirmDialog, PromptDialog } from './Dialogs';
+import { CollectionsDialog, ConfirmDialog, FolderAccessDialog, PromptDialog } from './Dialogs';
 import { DrawingCovers, type ImportingBook } from './library/BookItems';
 import { LibraryView } from './library/LibraryView';
 import type { BookHandlers, ToggleFlag } from './library/shelfInfo';
@@ -52,7 +52,11 @@ type Modal =
   | { kind: 'collections'; bookId: string }
   | { kind: 'newCollection' }
   | { kind: 'confirm'; title: string; message: string; confirmLabel: string; onConfirm: () => void }
-  | { kind: 'about' };
+  | { kind: 'about' }
+  | { kind: 'folderAccess' };
+
+/** Set once the first-run request for folder access has been shown, so it is never shown again. */
+const FOLDER_ACCESS_ASKED_KEY = 'folder-access-asked';
 
 export function App() {
   const platform = useMemo(detectPlatform, []);
@@ -198,6 +202,16 @@ export function App() {
     else return false;
     return true;
   };
+  // The first run on Android starts by asking for access to the device's files.
+  useEffect(() => {
+    if (platform?.kind !== 'android') return;
+    void (async () => {
+      if (await platform.kvGet<boolean>(FOLDER_ACCESS_ASKED_KEY)) return;
+      await platform.kvSet(FOLDER_ACCESS_ASKED_KEY, true);
+      if (!(await platform.hasFolderAccess())) setModal({ kind: 'folderAccess' });
+    })();
+  }, [platform]);
+
   useEffect(() => {
     if (platform?.kind !== 'android') return;
     void checkForAppUpdate(__APP_VERSION__).then(async (found) => {
@@ -444,7 +458,8 @@ export function App() {
           />
         )}
 
-        {modal?.kind === 'about' && engine && <AboutDialog engine={engine} onClose={() => setModal(null)} />}
+        {modal?.kind === 'folderAccess' && platform && <FolderAccessDialog onAllow={() => void platform.requestFolderAccess()} onClose={() => setModal(null)} />}
+        {modal?.kind === 'about' && engine &&<AboutDialog engine={engine} onClose={() => setModal(null)} />}
         {modal?.kind === 'confirm' && <ConfirmDialog title={modal.title} message={modal.message} confirmLabel={modal.confirmLabel} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
         {modal?.kind === 'newCollection' && <PromptDialog title="New collection" label="Collection name" confirmLabel="Create" onSubmit={createCollection} onClose={() => setModal(null)} />}
         {collectionsEntry && (
