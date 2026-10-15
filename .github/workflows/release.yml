@@ -101,12 +101,22 @@ jobs:
       - name: Decode signing key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
             echo "::error::Repository secret ANDROID_KEYSTORE_BASE64 is not set (see README, Releases)"
             exit 1
           fi
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 --decode > "$RUNNER_TEMP/release.keystore"
+          keystore="$RUNNER_TEMP/release.keystore"
+          if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 --decode > "$keystore" 2>/dev/null; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not valid base64 (${#ANDROID_KEYSTORE_BASE64} characters). Paste the output of [Convert]::ToBase64String([IO.File]::ReadAllBytes(\"<path to .jks>\"))"
+            exit 1
+          fi
+          if ! keytool -list -keystore "$keystore" -storepass:env ANDROID_KEYSTORE_PASSWORD -alias "$ANDROID_KEY_ALIAS" > /dev/null; then
+            echo "::error::The keystore did not open with ANDROID_KEYSTORE_PASSWORD, or has no key named ANDROID_KEY_ALIAS (see the log above)"
+            exit 1
+          fi
       - name: Build signed APK
         working-directory: android
         env:
