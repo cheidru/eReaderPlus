@@ -5,6 +5,7 @@ public/__ereader__/
 android/app/build/
 android/.gradle/
 android/build/
+test-results/
 *.log
 samples/
 .engine-notice/
