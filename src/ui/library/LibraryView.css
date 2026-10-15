@@ -68,7 +68,7 @@
 }
 
 .book-card {
-  --cover-width: 6.5rem;
+  --cover-width: 7.8rem;
   position: relative;
   min-width: 0;
   background: var(--surface);
@@ -203,7 +203,7 @@
 
 @media (max-width: 26rem) {
   .book-card {
-    --cover-width: 5.25rem;
+    --cover-width: 6.3rem;
   }
 
   .book-actions .icon-button {
