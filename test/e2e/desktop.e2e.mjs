@@ -53,14 +53,25 @@ function touch([from, to]) {
 }
 
 const results = [];
+// On GitHub Actions a failure is also an annotation, which the API shows without signing in (job logs need it).
+const annotate = (message) =>
+  process.env.GITHUB_ACTIONS && console.log(`::error title=End-to-end (${process.platform})::${message.replace(/%/g, '%25').replace(/\r?\n/g, '%0A')}`);
 const check = (name, fn) => {
   try {
     fn();
     results.push(`PASS ${name}`);
   } catch (error) {
     results.push(`FAIL ${name}: ${error.message}`);
+    annotate(`${name}: ${error.message}`);
   }
 };
+// A step that throws outside check() ends the run: report it after what passed so far.
+process.on('uncaughtException', (error) => {
+  console.log(results.join('\n'));
+  console.log(`FAIL stopped after "${results.at(-1) ?? 'start'}": ${error.stack ?? error}`);
+  annotate(`stopped after "${results.at(-1) ?? 'start'}": ${error.message ?? error}`);
+  process.exit(1);
+});
 
 // --- Modern web EPUB: scripts, modern CSS, pagination, TOC navigation, progress -----------------
 {
