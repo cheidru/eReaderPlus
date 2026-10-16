@@ -1,6 +1,7 @@
 // End-to-end check of the desktop app: run `npm run build && node scripts/make-sample-books.mjs` first.
 // Usage: node test/e2e/desktop.e2e.mjs [screenshot-dir]
 import assert from 'node:assert/strict';
+import { realpathSync } from 'node:fs';
 import { copyFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -87,6 +88,8 @@ process.on('uncaughtException', (error) => {
     for (const [name, ok] of Object.entries(features)) assert.ok(ok, name);
   });
 
+  // Under xvfb the window can still be unsized here, which makes the frame 0 px wide.
+  await frame.waitForFunction(() => innerWidth > 0);
   const layout = await frame.evaluate(() => ({
     classes: document.documentElement.className,
     pages: Math.round(document.scrollingElement.scrollWidth / innerWidth),
@@ -714,7 +717,8 @@ async function frameWithText(page, text) {
 
 // --- Watched folders: the in-app folder browser, then scans, on an empty library -------------------
 {
-  const folderData = await mkdtemp(path.join(tmpdir(), 'ereader-folders-'));
+  // The folder browser shows real paths: not C:\Users\RUNNER~1 (8.3 name) or /var (a link to /private/var on macOS).
+  const folderData = realpathSync.native(await mkdtemp(path.join(tmpdir(), 'ereader-folders-')));
   const watched = path.join(folderData, 'Books');
   await mkdir(path.join(watched, 'Series'), { recursive: true });
   await copyFile(path.resolve('samples', 'modern-web.epub'), path.join(watched, 'modern-web.epub'));
