@@ -102,7 +102,6 @@ export function BookCard({ platform, entry, books, onMenu }: ItemProps) {
 
 /** Plain cover tile, like the iPad Books library: the cover, its file format (checked when finished, NEW when unopened), and a "…" button. */
 export function ShelfTile({ platform, entry, books, onMenu }: ItemProps) {
-  const percent = percentRead(entry);
   return (
     <li className="book-card shelf-tile">
       <button type="button" className="book-open" onClick={() => books.onOpen(entry.id)} title={entry.title}>
@@ -114,7 +113,7 @@ export function ShelfTile({ platform, entry, books, onMenu }: ItemProps) {
         <span className="tile-status" title={entry.finished ? 'Finished' : undefined}>
           {entry.finished && <Icon name="check" className="tile-check" />}
           {formatLabel(entry.format)}
-          {!entry.finished && percent === 0 && <span className="tile-badge">New</span>}
+          {!entry.finished && entry.lastOpenedAt === 0 && <span className="tile-badge">New</span>}
         </span>
         <button type="button" className="icon-button tile-more" aria-label={`More actions for ${entry.title}`} onClick={(e) => onMenu(e.currentTarget, entry)}>
           <Icon name="moreHoriz" />
