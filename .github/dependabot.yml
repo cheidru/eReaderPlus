@@ -15,3 +15,8 @@ updates:
     directory: /android
     schedule:
       interval: weekly
+    # The Gradle major follows the Android Gradle plugin of Capacitor's Android project (8.x needs Gradle 8):
+    # move it with a Capacitor upgrade, not alone.
+    ignore:
+      - dependency-name: gradle-wrapper
+        update-types: ["version-update:semver-major"]
