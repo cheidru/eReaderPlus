@@ -65,6 +65,8 @@ linux:
     - AppImage
     - deb
   category: Office
+  # Required by .deb (electron-builder would otherwise take it from an author email in package.json).
+  maintainer: cheidru <chei@yandex.ru>
 # Where electron-updater looks for new versions. The Release workflow (.github/workflows/release.yml) attaches the
 # installer, its blockmap and latest.yml to the GitHub Release of each version tag.
 publish:
