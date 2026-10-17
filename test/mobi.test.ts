@@ -58,6 +58,15 @@ describe.each([
     expect(fs.files).toContain(parsed.cover);
   });
 
+  it('writes the cover and tells it before converting the text', async () => {
+    const fs = memoryBookFs({ 'source.mobi': fixture(name) });
+    const previews: { title: string; cover: string | null; files: string[] }[] = [];
+    const { parsed } = await importMobi(fs, 'source.mobi', name, (preview) => previews.push({ ...preview, files: [...fs.files] }));
+    expect(previews.at(-1)).toMatchObject({ title: 'Kindle Sample', authors: ['eReaderPlus samples'], cover: parsed.cover });
+    expect(previews.at(-1)!.files).toContain(parsed.cover);
+    expect(previews.at(-1)!.files.some((f) => f.startsWith('text/'))).toBe(false);
+  });
+
   it('builds a TOC whose targets exist', async () => {
     const { fs, parsed } = await convert(name);
     expect(labels(parsed.toc)).toEqual(expectedToc);

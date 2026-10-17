@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { bookTexts, findInTexts, isSearchable } from '../../core/booksearch';
+import { DJVU_SOURCE, loadDjvuLibrary } from '../../core/djvu';
+import { DjvuPageStore, djvuMemoryBudget, openDjvuWorker } from '../../core/djvu-pages';
 import { loadManifest } from '../../core/import';
-import { loadProgress, markOpened, overallProgress, saveProgress } from '../../core/library';
-import { MESSAGE_TAG, parseFrameMessage, type FixedSpread, type FrameSettings, type GotoTarget, type HostMessage } from '../../core/messages';
+import { loadBookView, loadProgress, markOpened, overallProgress, saveBookView, saveProgress, type BookView } from '../../core/library';
+import { MESSAGE_TAG, parseFrameMessage, type DjvuPageData, type FixedSpread, type FrameSettings, type GotoTarget, type HostMessage } from '../../core/messages';
 import { splitFragment } from '../../core/paths';
 import { hasPageSpreads, spreadEnd, spreadFits, spreadStart } from '../../core/spread';
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP, type BookManifest, type Progress, type ReaderSettings, type TocItem } from '../../core/types';
@@ -36,8 +38,12 @@ const SEARCH_DELAY_MS = 300;
 /** Above this many documents, chapter marks on the position slider would merge into a solid bar. */
 const MAX_SLIDER_MARKS = 120;
 
-export function ReaderView({ platform, bookId, settings, onSettingsChange, onClose, onError }: Props) {
+export function ReaderView({ platform, bookId, settings: appSettings, onSettingsChange, onClose, onError }: Props) {
   const [manifest, setManifest] = useState<BookManifest | null>(null);
+  /** This book's own one or two page view (and cover alone), saved with the book. */
+  const [bookView, setBookView] = useState<BookView | null>(null);
+  /** The reader's settings, with this book's own view. */
+  const settings = useMemo<ReaderSettings>(() => (bookView ? { ...appSettings, ...bookView } : appSettings), [appSettings, bookView]);
   const [spineIndex, setSpineIndex] = useState(0);
   const [location, setLocation] = useState<Location>({ page: 0, pageCount: 1, fraction: 0 });
   const [chromeVisible, setChromeVisible] = useState(true);
@@ -58,6 +64,8 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
   const fixedZoom = useRef({ zoom: 1, panX: 0.5 });
   /** Whether Space, pressed while the app had the focus, holds the hand tool on a zoomed page. */
   const handHeld = useRef(false);
+  /** DjVu: the open book, kept in memory and decoded ahead of the reader for the page documents. */
+  const djvuPages = useRef<DjvuPageStore | null>(null);
   const saveTimer = useRef<number | undefined>(undefined);
   const pendingSave = useRef<Progress | null>(null);
   const origin = platform.bookOrigin(bookId);
@@ -66,13 +74,36 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
   const onErrorRef = useRef(onError);
   onCloseRef.current = onClose;
   onErrorRef.current = onError;
+  const appSettingsRef = useRef(appSettings);
+  appSettingsRef.current = appSettings;
+
+  /**
+   * Applies settings changed in the reader: the page view to this book (saved with it, and the view books opened for
+   * the first time start with), everything else to every book.
+   */
+  const changeSettings = useCallback(
+    (next: ReaderSettings) => {
+      const { spread, spreadCover, ...rest } = next;
+      if (bookView && (spread !== bookView.spread || spreadCover !== bookView.spreadCover)) {
+        const view = { spread, spreadCover };
+        setBookView(view);
+        void saveBookView(platform, bookId, view);
+      }
+      onSettingsChange({ ...appSettings, ...rest, spread, spreadCover });
+    },
+    [platform, bookId, bookView, appSettings, onSettingsChange],
+  );
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [m, progress] = await Promise.all([loadManifest(platform, bookId), loadProgress(platform, bookId)]);
+        const [m, progress, savedView] = await Promise.all([loadManifest(platform, bookId), loadProgress(platform, bookId), loadBookView(platform, bookId)]);
         if (cancelled) return;
+        // A book opened for the first time takes the view last chosen for another book, and keeps it from then on.
+        const view = savedView ?? { spread: appSettingsRef.current.spread, spreadCover: appSettingsRef.current.spreadCover };
+        if (!savedView) void saveBookView(platform, bookId, view);
+        setBookView(view);
         const index = progress ? Math.min(progress.spineIndex, m.spine.length - 1) : 0;
         pendingTarget.current = { kind: 'fraction', value: progress?.fraction ?? 0 };
         setSpineIndex(index);
@@ -87,6 +118,42 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
       cancelled = true;
     };
   }, [platform, bookId]);
+
+  // DjVu: read the book into memory in the background while its first page document loads.
+  const format = manifest?.format;
+  useEffect(() => {
+    if (format !== 'djvu') return;
+    const store = new DjvuPageStore(
+      async () => openDjvuWorker(await loadDjvuLibrary(), () => platform.readBinary(bookId, DJVU_SOURCE)),
+      djvuMemoryBudget(),
+    );
+    djvuPages.current = store;
+    return () => {
+      store.close();
+      if (djvuPages.current === store) djvuPages.current = null;
+    };
+  }, [platform, bookId, format]);
+
+  /** Sends a DjVu page document the page it asked for; a count of 0 tells it to decode the page itself. */
+  const answerDjvuPage = useCallback(
+    (page: number, full: boolean) => {
+      // The frame may show another page document by the time the page is decoded: page documents ignore pages they did not ask for.
+      const reply = (count: number, data: DjvuPageData | null) => {
+        const message: HostMessage = { tag: MESSAGE_TAG, type: 'djvuPage', page, full, count, data };
+        iframeRef.current?.contentWindow?.postMessage(message, origin);
+      };
+      const store = djvuPages.current;
+      if (!store) return reply(0, null);
+      store.page(page, full).then(
+        (data) => reply(store.count, data),
+        (error: unknown) => {
+          console.warn(`DjVu page ${page} could not be decoded in the app:`, error);
+          reply(0, null);
+        },
+      );
+    },
+    [origin],
+  );
 
   const flushSave = useCallback(() => {
     const progress = pendingSave.current;
@@ -243,7 +310,7 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
           // Like the font size buttons, which publisher layout turns off.
           if (manifest.layout !== 'reflowable' || !settings.overrideStyles) break;
           const fontScale = Math.min(FONT_SCALE_MAX, Math.max(FONT_SCALE_MIN, settings.fontScale + message.dir * FONT_SCALE_STEP));
-          if (fontScale !== settings.fontScale) onSettingsChange({ ...settings, fontScale });
+          if (fontScale !== settings.fontScale) changeSettings({ ...settings, fontScale });
           break;
         }
         case 'link':
@@ -252,11 +319,14 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
         case 'external':
           void platform.openExternal(message.href);
           break;
+        case 'djvuPage':
+          answerDjvuPage(message.page, message.full);
+          break;
       }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [origin, manifest, settings, onSettingsChange, frameSettings, post, platform, spineIndex, lastShown, navigate, navigateHref, panel, visualTurn, turn, handleKey, flushSave]);
+  }, [origin, manifest, settings, changeSettings, frameSettings, post, platform, spineIndex, lastShown, navigate, navigateHref, panel, visualTurn, turn, handleKey, flushSave, answerDjvuPage]);
 
   // Push settings changes to the current document.
   useEffect(() => {
@@ -364,6 +434,9 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
   const overall = overallProgress(manifest, lastShown(spineIndex), location.fraction);
   const chapterTitle = findTocLabel(manifest.toc, manifest.spine[spineIndex].href);
   const showPageNumbers = settings.flow === 'paginated' && manifest.layout === 'reflowable';
+  /** Text, PDF and DjVu can show two pages side by side; text only when it is paginated. */
+  const canSpread = manifest.layout === 'reflowable' || hasPageSpreads(manifest);
+  const spreadApplies = manifest.layout !== 'reflowable' || settings.flow === 'paginated';
   const percent = Math.round(overall * 100);
   const spineCount = manifest.spine.length;
   const marks = spineCount > 1 && spineCount <= MAX_SLIDER_MARKS ? Array.from({ length: spineCount - 1 }, (_, i) => (i + 1) / spineCount) : [];
@@ -390,6 +463,19 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
               {isSearchable(manifest) && (
                 <button type="button" className="icon-button" onClick={() => setPanel(panel === 'search' ? null : 'search')} aria-label="Search in book" aria-expanded={panel === 'search'}>
                   <Icon name="search" />
+                </button>
+              )}
+              {canSpread && (
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={() => changeSettings({ ...settings, spread: !settings.spread })}
+                  disabled={!spreadApplies}
+                  aria-label="Two-page view"
+                  aria-pressed={settings.spread}
+                  title={settings.spread ? 'Two pages side by side in landscape. Show one page' : 'One page. Show two pages side by side in landscape'}
+                >
+                  <Icon name={settings.spread ? 'twoPages' : 'onePage'} />
                 </button>
               )}
               <button type="button" className="icon-button" onClick={() => setPanel(panel === 'toc' ? null : 'toc')} aria-label="Contents" aria-expanded={panel === 'toc'}>
@@ -498,8 +584,8 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
         <SettingsPanel
           settings={settings}
           fixedLayout={manifest.layout === 'pre-paginated'}
-          canSpread={manifest.layout === 'reflowable' || hasPageSpreads(manifest)}
-          onChange={onSettingsChange}
+          canSpread={canSpread}
+          onChange={changeSettings}
           onClose={() => setPanel(null)}
         />
       )}

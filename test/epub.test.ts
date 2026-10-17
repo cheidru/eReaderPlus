@@ -30,6 +30,13 @@ describe('importEpub', () => {
     ]);
   });
 
+  it('tells the title, authors and cover before converting the chapters', async () => {
+    const fs = memoryBookFs(epub3Files());
+    const previews: unknown[] = [];
+    await importEpub(fs, (preview) => previews.push({ ...preview, injected: String(fs.data.get('OEBPS/text/ch2.xhtml')).includes(INJECTED_TAGS) }));
+    expect(previews).toEqual([{ title: 'Test Book', authors: ['Ada Lovelace', 'Charles Babbage'], cover: 'OEBPS/images/cover art.jpg', injected: false }]);
+  });
+
   it('injects the paginator into every spine document', async () => {
     const fs = memoryBookFs(epub3Files());
     await importEpub(fs);

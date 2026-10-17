@@ -16,12 +16,13 @@ import {
 } from '../core/library';
 import { checkForAppUpdate, UPDATE_DISMISSED_KEY, type AppUpdate } from '../core/app-updates';
 import { loadWatchedFolders, saveWatchedFolders, scanWatchedFolders, withFolder, type ScanResult } from '../core/folders';
+import type { ImportPreview } from '../core/import';
 import type { LibraryLocation } from '../core/shelves';
 import { DEFAULT_LIBRARY_PREFS, DEFAULT_SETTINGS, type EntryFlags, type LibraryEntry, type LibraryPrefs, type ReaderSettings } from '../core/types';
 import { detectPlatform, type EngineInfo, type FileRef } from '../platform';
 import { AboutDialog } from './AboutDialog';
-import { CollectionsDialog, ConfirmDialog, FolderAccessDialog, PromptDialog } from './Dialogs';
-import { DrawingCovers, type ImportingBook } from './library/BookItems';
+import { BookWaitDialog, CollectionsDialog, ConfirmDialog, FolderAccessDialog, PromptDialog } from './Dialogs';
+import { importingTitle, type ImportingBook } from './library/BookItems';
 import { LibraryView } from './library/LibraryView';
 import type { BookHandlers, ToggleFlag } from './library/shelfInfo';
 import { BookDetails } from './pages/BookDetails';
@@ -81,11 +82,11 @@ export function App() {
   const [dragging, setDragging] = useState(false);
   /** Book files being imported, shown as cards until their books are in the library. */
   const [importing, setImporting] = useState<ImportingBook[]>([]);
-  const [drawingCovers, setDrawingCovers] = useState<ReadonlySet<string>>(new Set());
+  /** The import (key) whose book the reader is waiting to open: it opens once imported. */
+  const [waitingFor, setWaitingFor] = useState<string | null>(null);
+  const waitingRef = useRef(waitingFor);
+  waitingRef.current = waitingFor;
   const back = useRef<() => boolean>(() => false);
-  /** The current view, for imports that finish after the user has moved on. */
-  const viewRef = useRef(view);
-  viewRef.current = view;
 
   const refreshLibrary = useCallback(async () => {
     if (!platform) return;
@@ -100,49 +101,49 @@ export function App() {
     noticeTimer.current = window.setTimeout(() => setNotice(null), NOTICE_MS);
   }, []);
 
-  /** Shows a book's placeholder cover as being drawn until `coverReady` settles, then the cover. */
-  const followCover = useCallback(
-    (bookId: string, coverReady: Promise<void> | null) => {
-      if (!coverReady) return;
-      setDrawingCovers((ids) => new Set(ids).add(bookId));
-      void coverReady.then(refreshLibrary).finally(() =>
-        setDrawingCovers((ids) => {
-          const next = new Set(ids);
-          next.delete(bookId);
-          return next;
-        }),
-      );
-    },
-    [refreshLibrary],
-  );
-
+  /**
+   * Shows a book file being imported on the shelves, as a card that gets the book's cover and title as soon as the
+   * importer knows them and can be clicked meanwhile. `done` takes the card away once the book is in the library
+   * (or failed: null), and opens the book if the reader is waiting for it; it returns whether it did.
+   */
   const showImporting = useCallback((file: FileRef) => {
-    const book = { key: crypto.randomUUID(), fileName: file.name };
-    setImporting((list) => [...list, book]);
-    return () => setImporting((list) => list.filter((b) => b !== book));
+    const key = crypto.randomUUID();
+    setImporting((list) => [...list, { key, fileName: file.name, preview: null }]);
+    return {
+      key,
+      preview: (preview: ImportPreview) => setImporting((list) => list.map((b) => (b.key === key ? { ...b, preview } : b))),
+      done: (bookId: string | null) => {
+        setImporting((list) => list.filter((b) => b.key !== key));
+        if (waitingRef.current !== key) return false;
+        setWaitingFor(null);
+        if (!bookId) return false;
+        setView({ kind: 'reader', bookId, from: 'library' });
+        return true;
+      },
+    };
   }, []);
 
+  /**
+   * Imports a book file. It shows on the shelves at once, with its cover as soon as that is read, while the rest of
+   * it is imported in the background. `open`: the reader asked to read it (rather than add it), so it opens once
+   * imported, with a wait shown until then.
+   */
   const openFile = useCallback(
-    async (file: FileRef) => {
+    async (file: FileRef, { open }: { open: boolean }) => {
       if (!platform) return;
       setError(null);
-      const done = showImporting(file);
-      const startView = viewRef.current;
+      const shown = showImporting(file);
+      if (open) setWaitingFor(shown.key);
       try {
-        const { entry, isNew, coverReady } = await addBook(platform, file);
+        const { entry, isNew } = await addBook(platform, file, { onPreview: shown.preview });
         await refreshLibrary();
-        if (isNew) followCover(entry.id, coverReady);
-        // Opens the book, unless the user has gone on to read another one (or to Settings) meanwhile.
-        const current = viewRef.current;
-        if (current === startView || current.kind === 'library' || current.kind === 'details') setView({ kind: 'reader', bookId: entry.id, from: 'library' });
-        else showNotice(`Added "${entry.title}"`);
+        if (!shown.done(entry.id)) showNotice(isNew ? `Added "${entry.title}"` : `"${entry.title}" is already in the library`);
       } catch (e) {
+        shown.done(null);
         setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        done();
       }
     },
-    [platform, refreshLibrary, followCover, showImporting, showNotice],
+    [platform, refreshLibrary, showImporting, showNotice],
   );
 
   /** Imports new books from the watched folders, with progress in a snackbar, like ReadEra's file scan. */
@@ -151,20 +152,21 @@ export function App() {
     setScanning(true);
     setBusy('Scanning folders…');
     try {
-      let importingDone = () => {};
+      let shown: ReturnType<typeof showImporting> | null = null;
       const result = await scanWatchedFolders(platform, {
         onProgress: (done, total) => setBusy(`Adding books from folders… ${done} of ${total}`),
         onImporting: (file) => {
-          importingDone();
-          importingDone = showImporting(file);
+          shown = showImporting(file);
         },
+        onPreview: (preview) => shown?.preview(preview),
         // Each book shows up as soon as it is added, not when the whole scan is done.
-        onAdded: (entry, coverReady) => {
-          importingDone();
-          followCover(entry.id, coverReady);
-          void refreshLibrary();
+        onImported: (entry) => {
+          const imported = shown;
+          shown = null;
+          if (!entry && imported && waitingRef.current === imported.key) setError('The book could not be imported.');
+          void refreshLibrary().then(() => imported?.done(entry?.id ?? null));
         },
-      }).finally(() => importingDone());
+      }).finally(() => shown?.done(null));
       setLastScan(describeScan(result));
       if (result.added > 0) {
         await refreshLibrary();
@@ -176,7 +178,7 @@ export function App() {
       setScanning(false);
       setBusy(null);
     }
-  }, [platform, refreshLibrary, showNotice, showImporting, followCover]);
+  }, [platform, refreshLibrary, showNotice, showImporting]);
 
   useEffect(() => {
     if (!platform) return;
@@ -189,12 +191,13 @@ export function App() {
     void loadSettings(platform).then(setSettings);
     void loadLibraryPrefs(platform).then(setPrefs);
     void platform.engineInfo().then(setEngine);
-    return platform.onOpenFile((file) => void openFile(file));
+    return platform.onOpenFile((file) => void openFile(file, { open: true }));
   }, [platform, refreshLibrary, openFile, runScan]);
 
   // Android's back button steps back through dialogs, pages and library groups before leaving the app.
   back.current = () => {
-    if (modal) setModal(null);
+    if (waitingFor) setWaitingFor(null);
+    else if (modal) setModal(null);
     else if (view.kind === 'reader') closeReader();
     else if (view.kind === 'folderPicker') setView({ kind: 'settings' });
     else if (view.kind !== 'library') setView({ kind: 'library' });
@@ -278,7 +281,7 @@ export function App() {
 
   const pickFile = async () => {
     const file = await platform.pickBookFile();
-    if (file) await openFile(file);
+    if (file) await openFile(file, { open: false });
   };
 
   const onDrop = (event: DragEvent) => {
@@ -286,7 +289,7 @@ export function App() {
     setDragging(false);
     const dropped = event.dataTransfer.files[0];
     const file = dropped && platform.fileFromDrop(dropped);
-    if (file) void openFile(file);
+    if (file) void openFile(file, { open: false });
   };
 
   const books: BookHandlers = {
@@ -318,176 +321,177 @@ export function App() {
     },
   };
 
+  const waitingBook = importing.find((b) => b.key === waitingFor);
   const detailsEntry = view.kind === 'details' ? entries.find((e) => e.id === view.bookId) : undefined;
   const collectionsEntry = modal?.kind === 'collections' ? entries.find((e) => e.id === modal.bookId) : undefined;
 
   return (
-    <DrawingCovers.Provider value={drawingCovers}>
-      <div
-        className="app"
-        data-ui={prefs.appTheme}
-        style={themeStyle(prefs.colorTheme, prefs.appTheme)}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={(e) => e.currentTarget === e.target && setDragging(false)}
-        onDrop={onDrop}
-      >
-        {engine && !engine.upToDate && (
-          <div className="app-banner">
-            Your {engine.engine} ({engine.version}) is outdated, so some books may not display correctly.
-            {engine.updateUrl && (
-              <button type="button" className="link-button" onClick={() => void platform.openExternal(engine.updateUrl!)}>
-                Update it
-              </button>
-            )}
-          </div>
-        )}
-        {update && (
-          <div className="app-banner" role="status">
-            eReaderPlus {update.version} is available.
-            <button type="button" className="link-button" onClick={() => void platform.openExternal(update.url)}>
-              Download
+    <div
+      className="app"
+      data-ui={prefs.appTheme}
+      style={themeStyle(prefs.colorTheme, prefs.appTheme)}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={(e) => e.currentTarget === e.target && setDragging(false)}
+      onDrop={onDrop}
+    >
+      {engine && !engine.upToDate && (
+        <div className="app-banner">
+          Your {engine.engine} ({engine.version}) is outdated, so some books may not display correctly.
+          {engine.updateUrl && (
+            <button type="button" className="link-button" onClick={() => void platform.openExternal(engine.updateUrl!)}>
+              Update it
             </button>
-            <button
-              type="button"
-              className="link-button"
-              onClick={() => {
-                setUpdate(null);
-                void platform.kvSet(UPDATE_DISMISSED_KEY, update.version);
-              }}
-            >
-              Not now
-            </button>
-          </div>
-        )}
-
-        {view.kind === 'reader' ? (
-          <ReaderView
-            key={view.bookId}
-            platform={platform}
-            bookId={view.bookId}
-            settings={settings}
-            onSettingsChange={updateSettings}
-            onClose={closeReader}
-            onError={setError}
-          />
-        ) : view.kind === 'settings' ? (
-          <SettingsPage
-            prefs={prefs}
-            folders={{
-              folders: watchedFolders,
-              scanning,
-              lastScan,
-              onAdd: () => setView({ kind: 'folderPicker' }),
-              onRemove: (folder) => {
-                const next = watchedFolders.filter((f) => f !== folder);
-                setWatchedFolders(next);
-                void saveWatchedFolders(platform, next);
-              },
-              onScan: () => void runScan(),
+          )}
+        </div>
+      )}
+      {update && (
+        <div className="app-banner" role="status">
+          eReaderPlus {update.version} is available.
+          <button type="button" className="link-button" onClick={() => void platform.openExternal(update.url)}>
+            Download
+          </button>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => {
+              setUpdate(null);
+              void platform.kvSet(UPDATE_DISMISSED_KEY, update.version);
             }}
-            engine={engine}
-            onChange={updatePrefs}
-            onBack={() => setView({ kind: 'library' })}
-            onAbout={() => setModal({ kind: 'about' })}
-          />
-        ) : view.kind === 'folderPicker' ? (
-          <FolderPicker
-            platform={platform}
-            onPick={(folder) => {
-              const next = withFolder(watchedFolders, folder);
+          >
+            Not now
+          </button>
+        </div>
+      )}
+
+      {view.kind === 'reader' ? (
+        <ReaderView
+          key={view.bookId}
+          platform={platform}
+          bookId={view.bookId}
+          settings={settings}
+          onSettingsChange={updateSettings}
+          onClose={closeReader}
+          onError={setError}
+        />
+      ) : view.kind === 'settings' ? (
+        <SettingsPage
+          prefs={prefs}
+          folders={{
+            folders: watchedFolders,
+            scanning,
+            lastScan,
+            onAdd: () => setView({ kind: 'folderPicker' }),
+            onRemove: (folder) => {
+              const next = watchedFolders.filter((f) => f !== folder);
               setWatchedFolders(next);
-              setView({ kind: 'settings' });
-              void saveWatchedFolders(platform, next).then(runScan);
-            }}
-            onCancel={() => setView({ kind: 'settings' })}
-          />
-        ) : detailsEntry ? (
-          <BookDetails
-            platform={platform}
-            entry={detailsEntry}
-            books={books}
-            onBack={() => setView({ kind: 'library' })}
-            onAuthor={(author) => {
-              setLocation({ shelf: 'authors', group: author });
-              setView({ kind: 'library' });
-            }}
-            onSeries={(name) => {
-              setLocation({ shelf: 'series', group: name });
-              setView({ kind: 'library' });
-            }}
-            onCollection={(name) => {
-              setLocation({ shelf: 'collections', group: name });
-              setView({ kind: 'library' });
-            }}
-          />
-        ) : (
-          <LibraryView
-            platform={platform}
-            entries={entries}
-            importing={importing}
-            collections={allCollections}
-            prefs={prefs}
-            location={location}
-            onLocationChange={setLocation}
-            onPrefsChange={updatePrefs}
-            books={books}
-            onOpenFile={(file) => {
-              const existing = entries.find((e) => e.source === file.ref);
-              if (existing) books.onOpen(existing.id);
-              else void openFile(file);
-            }}
-            onAdd={() => void pickFile()}
-            onCreateCollection={() => setModal({ kind: 'newCollection' })}
-            onDeleteCollection={(name) =>
-              setModal({
-                kind: 'confirm',
-                title: 'Delete collection?',
-                message: `The collection "${name}" will be deleted. Its books stay in the library.`,
-                confirmLabel: 'Delete',
-                onConfirm: () => {
-                  setLocation({ shelf: 'collections' });
-                  void deleteCollection(platform, name).then(refreshLibrary);
-                },
-              })
-            }
-            onSettings={() => setView({ kind: 'settings' })}
-            onAbout={() => setModal({ kind: 'about' })}
-          />
-        )}
+              void saveWatchedFolders(platform, next);
+            },
+            onScan: () => void runScan(),
+          }}
+          engine={engine}
+          onChange={updatePrefs}
+          onBack={() => setView({ kind: 'library' })}
+          onAbout={() => setModal({ kind: 'about' })}
+        />
+      ) : view.kind === 'folderPicker' ? (
+        <FolderPicker
+          platform={platform}
+          onPick={(folder) => {
+            const next = withFolder(watchedFolders, folder);
+            setWatchedFolders(next);
+            setView({ kind: 'settings' });
+            void saveWatchedFolders(platform, next).then(runScan);
+          }}
+          onCancel={() => setView({ kind: 'settings' })}
+        />
+      ) : detailsEntry ? (
+        <BookDetails
+          platform={platform}
+          entry={detailsEntry}
+          books={books}
+          onBack={() => setView({ kind: 'library' })}
+          onAuthor={(author) => {
+            setLocation({ shelf: 'authors', group: author });
+            setView({ kind: 'library' });
+          }}
+          onSeries={(name) => {
+            setLocation({ shelf: 'series', group: name });
+            setView({ kind: 'library' });
+          }}
+          onCollection={(name) => {
+            setLocation({ shelf: 'collections', group: name });
+            setView({ kind: 'library' });
+          }}
+        />
+      ) : (
+        <LibraryView
+          platform={platform}
+          entries={entries}
+          importing={importing}
+          onOpenImporting={setWaitingFor}
+          collections={allCollections}
+          prefs={prefs}
+          location={location}
+          onLocationChange={setLocation}
+          onPrefsChange={updatePrefs}
+          books={books}
+          onOpenFile={(file) => {
+            const existing = entries.find((e) => e.source === file.ref);
+            if (existing) books.onOpen(existing.id);
+            else void openFile(file, { open: true });
+          }}
+          onAdd={() => void pickFile()}
+          onCreateCollection={() => setModal({ kind: 'newCollection' })}
+          onDeleteCollection={(name) =>
+            setModal({
+              kind: 'confirm',
+              title: 'Delete collection?',
+              message: `The collection "${name}" will be deleted. Its books stay in the library.`,
+              confirmLabel: 'Delete',
+              onConfirm: () => {
+                setLocation({ shelf: 'collections' });
+                void deleteCollection(platform, name).then(refreshLibrary);
+              },
+            })
+          }
+          onSettings={() => setView({ kind: 'settings' })}
+          onAbout={() => setModal({ kind: 'about' })}
+        />
+      )}
 
-        {modal?.kind === 'folderAccess' && platform && <FolderAccessDialog onAllow={() => void platform.requestFolderAccess()} onClose={() => setModal(null)} />}
-        {modal?.kind === 'about' && engine &&<AboutDialog engine={engine} onClose={() => setModal(null)} />}
-        {modal?.kind === 'confirm' && <ConfirmDialog title={modal.title} message={modal.message} confirmLabel={modal.confirmLabel} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
-        {modal?.kind === 'newCollection' && <PromptDialog title="New collection" label="Collection name" confirmLabel="Create" onSubmit={createCollection} onClose={() => setModal(null)} />}
-        {collectionsEntry && (
-          <CollectionsDialog
-            bookTitle={collectionsEntry.title}
-            names={allCollections}
-            selected={collectionsEntry.collections ?? []}
-            onChange={(selected) => setFlags(collectionsEntry.id, { collections: selected })}
-            onCreate={createCollection}
-            onClose={() => setModal(null)}
-          />
-        )}
-        {dragging && <div className="drop-overlay">Drop a book to open it</div>}
-        {busy && <div className="toast">{busy}</div>}
-        {notice && !busy && (
-          <div className="toast" role="status">
-            {notice}
-          </div>
-        )}
-        {error && (
-          <div className="toast toast-error" role="alert">
-            {error}
-            <button type="button" className="link-button" onClick={() => setError(null)}>
-              Dismiss
-            </button>
-          </div>
-        )}
-      </div>
-    </DrawingCovers.Provider>
+      {modal?.kind === 'folderAccess' && platform && <FolderAccessDialog onAllow={() => void platform.requestFolderAccess()} onClose={() => setModal(null)} />}
+      {modal?.kind === 'about' && engine &&<AboutDialog engine={engine} onClose={() => setModal(null)} />}
+      {modal?.kind === 'confirm' && <ConfirmDialog title={modal.title} message={modal.message} confirmLabel={modal.confirmLabel} onConfirm={modal.onConfirm} onClose={() => setModal(null)} />}
+      {modal?.kind === 'newCollection' && <PromptDialog title="New collection" label="Collection name" confirmLabel="Create" onSubmit={createCollection} onClose={() => setModal(null)} />}
+      {collectionsEntry && (
+        <CollectionsDialog
+          bookTitle={collectionsEntry.title}
+          names={allCollections}
+          selected={collectionsEntry.collections ?? []}
+          onChange={(selected) => setFlags(collectionsEntry.id, { collections: selected })}
+          onCreate={createCollection}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {waitingBook && <BookWaitDialog title={importingTitle(waitingBook)} onClose={() => setWaitingFor(null)} />}
+      {dragging && <div className="drop-overlay">Drop a book to add it</div>}
+      {busy && <div className="toast">{busy}</div>}
+      {notice && !busy && (
+        <div className="toast" role="status">
+          {notice}
+        </div>
+      )}
+      {error && (
+        <div className="toast toast-error" role="alert">
+          {error}
+          <button type="button" className="link-button" onClick={() => setError(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

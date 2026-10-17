@@ -22,7 +22,7 @@ import type { BookFs } from './bookfs';
 import type { ParsedBook } from './epub';
 import { DrmError } from './fonts';
 import { readerHtml } from './html';
-import type { SpineItem, TocItem } from './types';
+import type { OnPreview, SpineItem, TocItem } from './types';
 
 const NONE = 0xffffffff;
 
@@ -608,7 +608,16 @@ function metadata(book: MobiBook, fallbackTitle: string) {
 const PAGEBREAK = /<\s*(?:mbp:)?pagebreak[^>]*>/gi;
 const FILEPOS = /<[^<>]+filepos\s*=\s*['"]?0*(\d+)/gi;
 
-async function convertMobi6(fs: BookFs, book: MobiBook, fallbackTitle: string): Promise<ParsedBook> {
+/** Writes the cover and tells it, with the title and authors, before the book is converted. */
+async function preview(resources: ResourceWriter, book: MobiBook, fallbackTitle: string, onPreview?: OnPreview): Promise<void> {
+  if (!onPreview) return;
+  const { title, authors } = metadata(book, fallbackTitle);
+  onPreview({ title, authors, cover: await resources.cover() });
+}
+
+async function convertMobi6(fs: BookFs, book: MobiBook, fallbackTitle: string, onPreview?: OnPreview): Promise<ParsedBook> {
+  const resources = new ResourceWriter(fs, book);
+  await preview(resources, book, fallbackTitle, onPreview);
   const raw = book.text();
   const str = latin1.decode(raw);
   const breaks = [0, ...Array.from(str.matchAll(PAGEBREAK), (m) => m.index)].filter((x, i, a) => i === 0 || x > a[i - 1]);
@@ -620,7 +629,6 @@ async function convertMobi6(fs: BookFs, book: MobiBook, fallbackTitle: string): 
   collect(ncx);
   const sorted = [...targets].filter((t) => t < raw.length).sort((a, b) => a - b);
 
-  const resources = new ResourceWriter(fs, book);
   const docs: Document[] = [];
   let guideTocFilepos: number | null = null;
   for (const section of sections) {
@@ -739,8 +747,10 @@ interface Section {
   frags: Fragment[];
 }
 
-async function convertKf8(fs: BookFs, book: MobiBook, fallbackTitle: string): Promise<ParsedBook> {
+async function convertKf8(fs: BookFs, book: MobiBook, fallbackTitle: string, onPreview?: OnPreview): Promise<ParsedBook> {
   const { header } = book;
+  const resources = new ResourceWriter(fs, book);
+  await preview(resources, book, fallbackTitle, onPreview);
   const raw = book.text();
 
   const flows: [number, number][] = [];
@@ -819,7 +829,6 @@ async function convertKf8(fs: BookFs, book: MobiBook, fallbackTitle: string): Pr
     return m ? resolvePos(Number.parseInt(m[1], 32), Number.parseInt(m[2], 32)) : null;
   };
 
-  const resources = new ResourceWriter(fs, book);
   const writtenFlows = new Map<number, string | null>();
   const svgFlows = new Map<string, string>();
 
@@ -952,7 +961,12 @@ async function convertKf8(fs: BookFs, book: MobiBook, fallbackTitle: string): Pr
 // --- Entry point ----------------------------------------------------------------------------------
 
 /** Converts the MOBI/AZW/AZW3 file at `sourcePath` into HTML sections inside the book folder. */
-export async function importMobi(fs: BookFs, sourcePath: string, fileName: string): Promise<{ format: 'mobi' | 'azw3'; parsed: ParsedBook }> {
+export async function importMobi(
+  fs: BookFs,
+  sourcePath: string,
+  fileName: string,
+  onPreview?: OnPreview,
+): Promise<{ format: 'mobi' | 'azw3'; parsed: ParsedBook }> {
   const pdb = new Pdb(await fs.readBinary(sourcePath));
   if (pdb.type === 'TEXtREAd') throw new Error('Plain PalmDOC files are not supported');
   if (pdb.type !== 'BOOKMOBI') throw new Error(`Not a MOBI file: ${fileName}`);
@@ -961,7 +975,7 @@ export async function importMobi(fs: BookFs, sourcePath: string, fileName: strin
   const header = parseHeader(pdb.record(0));
   const mobi6 = new MobiBook(pdb, header, 0, header.resourceStart);
   if (header.version >= 8) {
-    return { format: 'azw3', parsed: await convertKf8(fs, mobi6.init(), fallbackTitle) };
+    return { format: 'azw3', parsed: await convertKf8(fs, mobi6.init(), fallbackTitle, onPreview) };
   }
   const boundary = header.exth.boundary;
   if (boundary !== undefined && boundary !== NONE && boundary < pdb.count) {
@@ -973,11 +987,11 @@ export async function importMobi(fs: BookFs, sourcePath: string, fileName: strin
     }
     if (kf8) {
       try {
-        return { format: 'azw3', parsed: await convertKf8(fs, kf8, fallbackTitle) };
+        return { format: 'azw3', parsed: await convertKf8(fs, kf8, fallbackTitle, onPreview) };
       } catch (error) {
         console.warn('KF8 part could not be converted, falling back to MOBI 6:', error);
       }
     }
   }
-  return { format: 'mobi', parsed: await convertMobi6(fs, mobi6.init(), fallbackTitle) };
+  return { format: 'mobi', parsed: await convertMobi6(fs, mobi6.init(), fallbackTitle, onPreview) };
 }

@@ -7,7 +7,7 @@ import type { BookFs } from './bookfs';
 import type { ParsedBook } from './epub';
 import { injectReader, READER_ASSETS_PREFIX } from './inject';
 import { CSS_PX_PER_PT, destinationPage, pdfDocumentOptions, PDFJS_MODULE, PDFJS_WORKER } from './pdf-common';
-import type { SpineItem, TocItem } from './types';
+import type { OnPreview, SpineItem, TocItem } from './types';
 import { escapeXml } from './xml';
 
 export const PDF_SOURCE = 'source.pdf';
@@ -84,8 +84,8 @@ function metadataText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-/** Writes the page documents for the PDF at `sourcePath`. The cover is still being drawn when this returns. */
-export async function importPdf(fs: BookFs, sourcePath: string, fileName: string, lib: PdfLibrary): Promise<ParsedBook> {
+/** Writes the page documents for the PDF at `sourcePath`, and draws its cover from the first page meanwhile. */
+export async function importPdf(fs: BookFs, sourcePath: string, fileName: string, lib: PdfLibrary, onPreview?: OnPreview): Promise<ParsedBook> {
   const bytes = await fs.readBinary(sourcePath);
   const task = lib.getDocument({ data: bytes.slice(), ...pdfDocumentOptions() });
   let doc: PdfDocument;
@@ -96,8 +96,17 @@ export async function importPdf(fs: BookFs, sourcePath: string, fileName: string
     if ((error as Error)?.name === 'PasswordException') throw new Error('This PDF is password-protected and cannot be opened.');
     throw new Error(`Not a PDF file, or the file is damaged: ${fileName}`);
   }
-  let coverStarted = false;
+  // Drawn while the page documents are written (pdf.js renders in its worker): the library shows it once drawn.
+  let drawingCover: Promise<string | null> | null = null;
   try {
+    const { info, metadata } = (await doc.getMetadata().catch(() => null)) ?? { info: {}, metadata: null };
+    const fields = info as Record<string, unknown>;
+    const title = metadataText(metadata?.get('dc:title')) || metadataText(fields.Title) || fileName.replace(/\.[^.]+$/, '');
+    const author = metadataText(metadata?.get('dc:creator')) || metadataText(fields.Author);
+    const authors = author ? author.split(/\s*;\s*/).filter(Boolean) : [];
+    drawingCover = writeCover(fs, doc);
+    void drawingCover.then((cover) => onPreview?.({ title, authors, cover }));
+
     const spine: SpineItem[] = [];
     for (let n = 1; n <= doc.numPages; n++) {
       const page = await doc.getPage(n);
@@ -115,28 +124,22 @@ export async function importPdf(fs: BookFs, sourcePath: string, fileName: string
       // A damaged outline should not stop the book from opening.
     }
 
-    const { info, metadata } = (await doc.getMetadata().catch(() => null)) ?? { info: {}, metadata: null };
-    const fields = info as Record<string, unknown>;
-    const title = metadataText(metadata?.get('dc:title')) || metadataText(fields.Title) || fileName.replace(/\.[^.]+$/, '');
-    const author = metadataText(metadata?.get('dc:creator')) || metadataText(fields.Author);
     const direction = (await doc.getViewerPreferences().catch(() => null))?.get('Direction') === 'R2L' ? 'rtl' : 'ltr';
 
-    // Rendering an image-heavy first page takes seconds: the document stays open until the cover is drawn.
-    const pendingCover = writeCover(fs, doc).finally(() => task.destroy().catch(() => {}));
-    coverStarted = true;
     return {
       identifier: `pdf:${doc.fingerprints[0] ?? fileName}`,
       title,
-      authors: author ? author.split(/\s*;\s*/).filter(Boolean) : [],
+      authors,
       language: metadataText(fields.Language),
-      cover: null,
-      pendingCover,
+      cover: await drawingCover,
       layout: 'pre-paginated',
       direction,
       spine,
       toc,
     };
   } finally {
-    if (!coverStarted) await task.destroy();
+    // The cover is drawn from the document: it stays open until then (writeCover never rejects).
+    await drawingCover;
+    await task.destroy();
   }
 }

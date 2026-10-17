@@ -92,7 +92,7 @@
   cursor: pointer;
 }
 
-.book-card:not(.shelf-tile, .book-importing) .book-open:hover {
+.book-card:not(.shelf-tile) .book-open:hover {
   background: var(--surface-hover);
 }
 
@@ -617,7 +617,7 @@
   transition: transform 0.15s ease;
 }
 
-.shelf-tile:not(.book-importing) .book-open:hover .tile-cover {
+.shelf-tile .book-open:hover .tile-cover {
   transform: translateY(-3px);
 }
 
@@ -718,11 +718,7 @@
   opacity: 0.8;
 }
 
-/* --- A book being imported, or whose cover is still being drawn --- */
-
-.book-importing .book-open {
-  cursor: default;
-}
+/* --- A book being imported: its cover shows; the tile footer or card says it is still importing --- */
 
 .cover-drawing {
   position: relative;

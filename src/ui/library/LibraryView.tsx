@@ -28,6 +28,8 @@ interface Props {
   entries: LibraryEntry[];
   /** Book files being imported, shown first on the shelves new books go to. */
   importing: ImportingBook[];
+  /** A book being imported was clicked: it opens once imported. */
+  onOpenImporting: (key: string) => void;
   /** Every collection name, including empty collections. */
   collections: string[];
   prefs: LibraryPrefs;
@@ -258,7 +260,7 @@ export function LibraryView(props: Props) {
         ) : (
           <ul className={layout === 'shelf' ? 'shelf-grid' : 'card-list'}>
             {shownImports.map((book) => (
-              <ImportingItem key={book.key} book={book} layout={layout} />
+              <ImportingItem key={book.key} platform={platform} book={book} layout={layout} onOpen={() => props.onOpenImporting(book.key)} />
             ))}
             {visible.map((entry) =>
               layout === 'shelf' ? (

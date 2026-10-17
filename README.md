@@ -58,8 +58,12 @@ merely "sealed" or "inscribed": those use a key derived from the file itself, li
 1. **Import** (`src/core/`, shared by all platforms): native code unzips the book into its own folder; TypeScript
    parses it, converts FB2/CBZ/MOBI/AZW3/LIT to (X)HTML, extracts CHM help files (transcoded to UTF-8), and injects a
    small paginator script into every chapter. DjVu and PDF are not converted: each page document renders its page
-   from the original file when shown (DjVu.js in a Web Worker; pdf.js, which has its own worker).
+   from the original file when shown (pdf.js, which has its own worker). For DjVu the app keeps the open book in
+   memory: DjVu.js in a Web Worker decodes pages in the background ahead of the reader, as many as fit a memory
+   budget (a small book entirely), so turning a page is instant.
    Scripted XHTML chapters are re-serialized as HTML, because Chromium won't run module scripts in XML documents.
+   Each importer reports the title and cover first (the cover is written before anything else), so a new book shows
+   up in the library with its cover at once while the rest is converted in the background.
 2. **Serve**: each book gets its own origin: `book://<id>/` on desktop, `https://<id>.ereaderplus.invalid/` on
    Android. A strict CSP blocks the network.
 3. **Render**: the React UI shows the chapter in a sandboxed, cross-origin iframe. The paginator

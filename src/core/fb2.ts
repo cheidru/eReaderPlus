@@ -6,7 +6,7 @@ import type { BookFs } from './bookfs';
 import type { ParsedBook } from './epub';
 import { injectReader } from './inject';
 import { fb2Series } from './series';
-import type { SpineItem, TocItem } from './types';
+import type { OnPreview, SpineItem, TocItem } from './types';
 import { all, attr, child, children, escapeXml, first, parseXml, text } from './xml';
 
 const IMAGE_EXT: Record<string, string> = {
@@ -252,13 +252,22 @@ function authorName(el: Element): string {
 }
 
 /** Converts the FB2 file at `sourcePath` into XHTML chapters inside the book folder. */
-export async function importFb2(fs: BookFs, sourcePath: string): Promise<ParsedBook> {
+export async function importFb2(fs: BookFs, sourcePath: string, onPreview?: OnPreview): Promise<ParsedBook> {
   const doc = parseXml(decodeFb2(await fs.readBinary(sourcePath)), 'FB2');
   const titleInfo = first(doc, 'title-info');
   const documentInfo = first(doc, 'document-info');
+  const title = text(child(titleInfo ?? doc.documentElement, 'book-title'));
+  const authors = titleInfo ? children(titleInfo, 'author').map(authorName).filter(Boolean) : [];
+
+  const coverImage = titleInfo && first(first(titleInfo, 'coverpage') ?? titleInfo, 'image');
+  const coverRef = coverImage ? (attr(coverImage, 'href') ?? '').replace(/^#/, '') : '';
+  const binaries = all(doc, 'binary');
+  // The cover is written first, so the library shows it while the rest of the book is converted.
+  const coverBinary = first(titleInfo ?? doc, 'coverpage') ? binaries.find((bin) => bin.getAttribute('id') === coverRef) : undefined;
+  if (coverBinary) binaries.unshift(...binaries.splice(binaries.indexOf(coverBinary), 1));
 
   const images = new Map<string, string>();
-  for (const bin of all(doc, 'binary')) {
+  for (const bin of binaries) {
     const id = bin.getAttribute('id');
     const ext = IMAGE_EXT[(bin.getAttribute('content-type') ?? '').toLowerCase()];
     if (!id || !ext) continue;
@@ -266,15 +275,15 @@ export async function importFb2(fs: BookFs, sourcePath: string): Promise<ParsedB
     const data = Uint8Array.from(atob((bin.textContent ?? '').replace(/\s+/g, '')), (c) => c.charCodeAt(0));
     await fs.writeBinary(file, data);
     images.set(id, file);
+    if (bin === coverBinary) onPreview?.({ title: title || sourcePath, authors, cover: file });
   }
+  if (!coverBinary || !images.has(coverRef)) onPreview?.({ title: title || sourcePath, authors, cover: null });
 
   const converter = new Converter();
   converter.registerImages(images);
 
   const spine: SpineItem[] = [];
-  const coverImage = titleInfo && first(first(titleInfo, 'coverpage') ?? titleInfo, 'image');
-  const coverRef = coverImage ? (attr(coverImage, 'href') ?? '').replace(/^#/, '') : '';
-  const cover = (first(titleInfo ?? doc, 'coverpage') && images.get(coverRef)) || null;
+  const cover = (coverBinary && images.get(coverRef)) || null;
   if (cover) {
     const coverPage = page('Cover', `<div class="image"><img src="../${escapeXml(cover)}" alt=""/></div>`);
     await fs.writeText('text/cover.xhtml', injectReader(coverPage));
@@ -289,8 +298,6 @@ export async function importFb2(fs: BookFs, sourcePath: string): Promise<ParsedB
   }
   if (spine.length === 0) throw new Error('FB2 book has no content');
 
-  const title = text(child(titleInfo ?? doc.documentElement, 'book-title'));
-  const authors = titleInfo ? children(titleInfo, 'author').map(authorName).filter(Boolean) : [];
   const docId = documentInfo ? text(child(documentInfo, 'id')) : '';
   return {
     identifier: docId || `${title}|${authors.join(',')}`,

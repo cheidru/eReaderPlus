@@ -1,21 +1,40 @@
 /**
- * DjVu: one fixed-layout HTML page per DjVu page. Pages are not converted at import; each page document
- * decodes its page from the original file with DjVu.js when shown (src/inject/djvu-page.ts).
+ * DjVu: one fixed-layout HTML page per DjVu page. Pages are not converted at import; each page document gets its
+ * page decoded from the original file by the app, which keeps the open book in memory (djvu-pages.ts), and decodes
+ * it with DjVu.js itself when the app can't (src/inject/djvu-page.ts).
  * DjVu.js (vendor/djvujs) is GPL-licensed; it is loaded at runtime from the reader assets, not bundled.
  */
 import type { BookFs } from './bookfs';
 import type { ParsedBook } from './epub';
 import { sha256Hex } from './fonts';
 import { injectReader, READER_ASSETS_PREFIX } from './inject';
-import type { SpineItem, TocItem } from './types';
+import type { OnPreview, SpineItem, TocItem } from './types';
 import { escapeXml } from './xml';
 
 export const DJVU_SOURCE = 'source.djvu';
 const COVER_PATH = '.ereader/cover.jpg';
 
-/** The part of the DjVu.js synchronous API used at import. */
+/** The parts of DjVu.js used by the app: the synchronous API at import, the worker while a book is read (djvu-pages.ts). */
 export interface DjvuLibrary {
   Document: new (buffer: ArrayBuffer) => DjvuDocument;
+  Worker: new (url: string) => DjvuWorker;
+}
+
+/** A DjVu.js worker: `doc` builds a task (a chain of document method calls) that `run` carries out in the worker. */
+export interface DjvuWorker {
+  worker: Worker;
+  doc: DjvuWorkerTask;
+  createDocument(buffer: ArrayBuffer): Promise<void>;
+  /** Resolves to the result of a single task, or to an array of the results of several. */
+  run(...tasks: DjvuWorkerTask[]): Promise<unknown>;
+  terminate(): void;
+}
+
+export interface DjvuWorkerTask {
+  getPagesQuantity(): DjvuWorkerTask;
+  getPage(n: number): DjvuWorkerTask;
+  getImageData(): DjvuWorkerTask;
+  getNormalizedTextZones(): DjvuWorkerTask;
 }
 
 interface DjvuDocument {
@@ -66,7 +85,6 @@ function pageHtml(n: number, width: number, height: number): string {
     '<!DOCTYPE html>\n<html><head><meta charset="utf-8"/>' +
       `<meta name="viewport" content="width=${width}, height=${height}"/><title>${n}</title>` +
       `<link rel="stylesheet" href="${READER_ASSETS_PREFIX}djvu-page.css"/>` +
-      `<script src="${READER_ASSETS_PREFIX}djvu.js"></script>` +
       `<script src="${READER_ASSETS_PREFIX}djvu-page.js"></script>` +
       `</head><body><canvas class="djvu-page" data-source="../../${escapeXml(DJVU_SOURCE)}" data-page="${n}"></canvas></body></html>`,
   );
@@ -104,7 +122,7 @@ async function jpegThumbnail(image: ImageData): Promise<Uint8Array | null> {
 }
 
 /** Writes the page documents for the DjVu file at `sourcePath`. */
-export async function importDjvu(fs: BookFs, sourcePath: string, fileName: string, lib: DjvuLibrary): Promise<ParsedBook> {
+export async function importDjvu(fs: BookFs, sourcePath: string, fileName: string, lib: DjvuLibrary, onPreview?: OnPreview): Promise<ParsedBook> {
   const bytes = await fs.readBinary(sourcePath);
   let doc: DjvuDocument;
   try {
@@ -116,6 +134,10 @@ export async function importDjvu(fs: BookFs, sourcePath: string, fileName: strin
 
   const count = doc.getPagesQuantity();
   if (count < 1) throw new Error('The DjVu document has no pages');
+  const title = fileName.replace(/\.[^.]+$/, '');
+  // The cover first, so the library shows it while the page documents are written.
+  const cover = await writeCover(fs, doc);
+  onPreview?.({ title, authors: [], cover });
   const spine: SpineItem[] = [];
   for (let n = 1; n <= count; n++) {
     const page = doc.getPageUnsafe(n);
@@ -144,10 +166,10 @@ export async function importDjvu(fs: BookFs, sourcePath: string, fileName: strin
 
   return {
     identifier: `djvu:${await sha256Hex(bytes)}`,
-    title: fileName.replace(/\.[^.]+$/, ''),
+    title,
     authors: [],
     language: '',
-    cover: await writeCover(fs, doc),
+    cover,
     layout: 'pre-paginated',
     direction: 'ltr',
     spine,

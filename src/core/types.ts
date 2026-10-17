@@ -42,6 +42,19 @@ export interface BookManifest {
   aliases?: Record<string, string>;
 }
 
+/**
+ * What the library shows of a book being imported as soon as the importer knows it (title, authors, cover image),
+ * well before the rest of the book is converted. `cover` is a book-root-relative path, already written.
+ */
+export interface BookPreview {
+  title: string;
+  authors: string[];
+  cover: string | null;
+}
+
+/** Called by importers once a book's preview is known (at most a few times, the latest one counting). */
+export type OnPreview = (preview: BookPreview) => void;
+
 export interface Progress {
   spineIndex: number;
   /** Position inside the spine document, 0..1. */

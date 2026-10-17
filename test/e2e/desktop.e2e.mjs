@@ -376,9 +376,9 @@ async function frameWithText(page, text) {
   const near = (actual, expected) => actual.every((v, i) => Math.abs(v - expected[i]) < 24);
   const first = await pixel('0001.html');
   results.push(`INFO DjVu page 1: ${JSON.stringify(first)}`);
-  check('DjVu page renders in a worker, in fixed layout', () => {
+  check('DjVu page is decoded by the app, which keeps the book in memory, in fixed layout', () => {
     assert.ok(near(first.color, [200, 40, 40]), JSON.stringify(first.color));
-    assert.equal(first.decoder, 'worker');
+    assert.equal(first.decoder, 'app');
     assert.ok(first.fixed);
   });
   await page.screenshot({ path: path.join(shots, '11-djvu.png') });
@@ -422,6 +422,24 @@ async function frameWithText(page, text) {
   const djvuLastSheets = await djvuLast.evaluate(() => document.querySelectorAll('.djvu-sheet').length);
   check('DjVu two-page view turns two pages at a time, the last page alone', () => assert.equal(djvuLastSheets, 1));
   await twoPages();
+
+  // The header button switches this book to two pages, which it keeps when opened again.
+  const viewButton = page.getByRole('button', { name: 'Two-page view' });
+  const pressed = async () => (await viewButton.getAttribute('aria-pressed')) === 'true';
+  const wasOff = !(await pressed());
+  await viewButton.click();
+  const nowOn = await pressed();
+  await page.keyboard.press('Home');
+  await page.getByRole('button', { name: 'Back to library' }).click();
+  await page.locator('.book-open[title="sample"]').first().click();
+  const reopened = await bookFrame(page, '0001.html');
+  await reopened.waitForFunction(() => document.querySelectorAll('.djvu-sheet').length === 2, null, { timeout: 15000 }).catch(() => {});
+  const reopenedSheets = await reopened.evaluate(() => document.querySelectorAll('.djvu-sheet').length);
+  check('the header button switches to two pages, and the book keeps it when opened again', () => {
+    assert.ok(wasOff && nowOn, `before: ${!wasOff}, after: ${nowOn}`);
+    assert.equal(reopenedSheets, 2);
+  });
+  await viewButton.click();
 
   await page.getByRole('button', { name: 'Back to library' }).click();
   const cover = page.locator('.book-open[title="sample"] img');

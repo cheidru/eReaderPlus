@@ -22,9 +22,18 @@ describe('DjVu', () => {
     const page = await fs.readText('.ereader/pages/0002.html');
     expect(page).toContain(INJECTED_TAGS);
     expect(page).toContain('<meta name="viewport" content="width=600, height=800"/>');
-    expect(page).toContain('src="/__ereader__/djvu.js"');
+    // DjVu.js is loaded by the page only when the app can't decode the page for it.
+    expect(page).not.toContain('src="/__ereader__/djvu.js"');
     expect(page).toContain('src="/__ereader__/djvu-page.js"');
     expect(page).toContain('data-source="../../source.djvu" data-page="2"');
+  });
+
+  it('tells the title before writing the page documents', async () => {
+    const fs = memoryBookFs({ 'source.djvu': sample() });
+    const previews: unknown[] = [];
+    await importDjvu(fs, 'source.djvu', 'My Scan.djvu', DjVu, (preview) => previews.push({ ...preview, files: fs.files.length }));
+    // No cover in Node: it has no canvas to draw one.
+    expect(previews).toEqual([{ title: 'My Scan', authors: [], cover: null, files: 1 }]);
   });
 
   it('maps the outline to pages', async () => {

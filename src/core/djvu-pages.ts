@@ -1,0 +1,243 @@
+/**
+ * Keeps the DjVu book being read in memory, so that turning a page shows it at once. When the book opens, its file
+ * is read and parsed once, in a Web Worker that lives until the book is closed. The worker then decodes pages in the
+ * background: the pages asked for first, then outward from the reader's position (three pages forward for each one
+ * back), keeping as many as the memory budget allows — a small book entirely, a large one around the reader.
+ * Pages are kept scaled down to what the screen can show (scans are often 600 dpi: 70 MB a page at full size);
+ * a page document asks for the full resolution when the reader zooms in.
+ * Page documents ask for their pages through the app (`djvuPage` messages, see src/inject/djvu-page.ts).
+ */
+import type { DjvuLibrary } from './djvu';
+import { READER_ASSETS_PREFIX } from './inject';
+import type { DjvuPageData } from './messages';
+
+/** Decodes the pages of one open book, at full resolution. */
+export interface DjvuPageDecoder {
+  readonly count: number;
+  decode(page: number): Promise<DjvuPageData>;
+  close(): void;
+}
+
+/** Bytes of decoded pages to keep: a share of the device's memory, as far as the browser tells it. */
+export function djvuMemoryBudget(): number {
+  const gigabytes = (navigator as { deviceMemory?: number }).deviceMemory ?? 4;
+  return Math.min(1024, Math.max(192, gigabytes * 64)) * 2 ** 20;
+}
+
+/** Reads the book's DjVu file and parses it in a DjVu.js worker. */
+export async function openDjvuWorker(lib: DjvuLibrary, read: () => Promise<Uint8Array>): Promise<DjvuPageDecoder> {
+  const bytes = await read();
+  const buffer = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes.buffer : bytes.slice().buffer;
+  const worker = new lib.Worker(new URL(`${READER_ASSETS_PREFIX}djvu.js`, location.href).href);
+  // DjVu.js only logs worker failures, so watch for them here to fail instead of hanging.
+  const failed = new Promise<never>((_, reject) => worker.worker.addEventListener('error', () => reject(new Error('The DjVu worker failed'))));
+  failed.catch(() => {});
+  const run = <T>(work: Promise<unknown>) => Promise.race([work, failed]) as Promise<T>;
+  try {
+    await run(worker.createDocument(buffer as ArrayBuffer));
+    const count = await run<number>(worker.run(worker.doc.getPagesQuantity()));
+    return {
+      count,
+      async decode(page) {
+        // DjVu.js returns the results of several tasks as an array.
+        const [image, zones] = await run<[ImageData, DjvuPageData['zones']]>(
+          worker.run(worker.doc.getPage(page).getImageData(), worker.doc.getPage(page).getNormalizedTextZones()),
+        );
+        return { width: image.width, height: image.height, image, zones };
+      },
+      close: () => worker.terminate(),
+    };
+  } catch (error) {
+    worker.terminate();
+    throw error;
+  }
+}
+
+/**
+ * The largest a page of `width`×`height` px is shown on this screen without zooming in, as a share of its size:
+ * fitted into the screen either way round (the window can be maximized, the phone turned).
+ */
+function screenScale(width: number, height: number): number {
+  const ratio = devicePixelRatio || 1;
+  const long = Math.max(screen.width, screen.height) * ratio;
+  const short = Math.min(screen.width, screen.height) * ratio;
+  return Math.min(1, Math.max(Math.min(short / width, long / height), Math.min(long / width, short / height)));
+}
+
+/** Scales a decoded page's image down to the screen's size; the page keeps its size and text in its own pixels. */
+export async function fitToScreen(page: DjvuPageData): Promise<DjvuPageData> {
+  const scale = screenScale(page.width, page.height);
+  if (scale >= 1) return page;
+  const width = Math.max(1, Math.round(page.width * scale));
+  const height = Math.max(1, Math.round(page.height * scale));
+  const bitmap = await createImageBitmap(page.image, { resizeWidth: width, resizeHeight: height, resizeQuality: 'high' });
+  const context = new OffscreenCanvas(width, height).getContext('2d', { willReadFrequently: true });
+  if (!context) return page;
+  context.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  return { ...page, image: context.getImageData(0, 0, width, height) };
+}
+
+interface Job {
+  page: number;
+  full: boolean;
+  waiters: { resolve: (page: DjvuPageData) => void; reject: (error: unknown) => void }[];
+}
+
+const pageBytes = (page: DjvuPageData) => page.image.data.byteLength;
+/** Full-resolution pages kept for zooming: the pages shown, at most. */
+const FULL_PAGES_KEPT = 2;
+
+export class DjvuPageStore {
+  private decoder: DjvuPageDecoder | null = null;
+  private readonly opening: Promise<DjvuPageDecoder>;
+  /** Pages scaled to the screen. */
+  private readonly pages = new Map<number, DjvuPageData>();
+  /** Pages at full resolution, the latest asked for last. */
+  private readonly fullPages = new Map<number, DjvuPageData>();
+  /** Pages asked for and not decoded yet, in the order they were asked for. */
+  private readonly jobs = new Map<string, Job>();
+  /** Pages that could not be decoded, so the background decoding does not try them again. */
+  private readonly failed = new Set<number>();
+  private bytes = 0;
+  /** The page the reader is at: 0 until a page is asked for, so nothing is decoded before the reader's first page. */
+  private position = 0;
+  private busy = false;
+  private closed = false;
+
+  /**
+   * `budget`: bytes of pages to keep (the pages being shown are kept anyway). `reduce` scales a page decoded at full
+   * resolution down to the size it is kept at.
+   */
+  constructor(
+    open: () => Promise<DjvuPageDecoder>,
+    private readonly budget: number,
+    private readonly reduce: (page: DjvuPageData) => Promise<DjvuPageData> = fitToScreen,
+  ) {
+    this.opening = open().then((decoder) => {
+      if (this.closed) {
+        decoder.close();
+        return decoder;
+      }
+      this.decoder = decoder;
+      this.pump();
+      return decoder;
+    });
+    // Reported to whoever asks for a page.
+    this.opening.catch(() => {});
+  }
+
+  /** The book's page count, 0 until it is open. */
+  get count(): number {
+    return this.decoder?.count ?? 0;
+  }
+
+  /** Page `n` (1-based), or null past the last page; `full` at full resolution. Pages are then decoded outward from it. */
+  async page(n: number, full = false): Promise<DjvuPageData | null> {
+    const { count } = await this.opening;
+    if (this.closed) throw new Error('The book was closed');
+    if (n > count) return null;
+    if (!full) this.position = n;
+    const kept = full ? this.fullPages.get(n) : this.pages.get(n);
+    if (kept) {
+      this.pump();
+      return kept;
+    }
+    return new Promise<DjvuPageData>((resolve, reject) => {
+      const key = `${n}${full ? 'f' : ''}`;
+      const job = this.jobs.get(key) ?? { page: n, full, waiters: [] };
+      job.waiters.push({ resolve, reject });
+      this.jobs.set(key, job);
+      this.pump();
+    });
+  }
+
+  close(): void {
+    this.closed = true;
+    this.decoder?.close();
+    const error = new Error('The book was closed');
+    for (const job of this.jobs.values()) for (const waiter of job.waiters) waiter.reject(error);
+    this.jobs.clear();
+    this.pages.clear();
+    this.fullPages.clear();
+    this.bytes = 0;
+  }
+
+  /** The pages to keep, most wanted first: as many as fit the budget at the average size kept so far. */
+  private wanted(): number[] {
+    if (!this.position) return [];
+    const count = this.decoder?.count ?? 0;
+    const average = this.pages.size ? this.bytes / this.pages.size : 0;
+    const limit = Math.min(count, average ? Math.max(2, Math.floor(this.budget / average)) : 2);
+    const order = [this.position];
+    let ahead = this.position + 1;
+    let back = this.position - 1;
+    while (order.length < limit && (ahead <= count || back >= 1)) {
+      for (let i = 0; i < 3 && ahead <= count && order.length < limit; i++) order.push(ahead++);
+      if (back >= 1 && order.length < limit) order.push(back--);
+    }
+    return order;
+  }
+
+  /** Decodes the next page wanted, one at a time so that a page asked for never waits behind a queue. */
+  private pump(): void {
+    if (this.busy || !this.decoder || this.closed) return;
+    const asked = this.jobs.values().next().value;
+    const next = asked ?? this.wanted().find((n) => !this.pages.has(n) && !this.failed.has(n));
+    if (next === undefined) return;
+    const job: Job = typeof next === 'number' ? { page: next, full: false, waiters: [] } : next;
+    this.busy = true;
+    this.decode(job.page, job.full).then(
+      (page) => {
+        this.busy = false;
+        if (this.closed) return;
+        for (const waiter of this.take(job)) waiter.resolve(page);
+        this.pump();
+      },
+      (error: unknown) => {
+        this.busy = false;
+        if (this.closed) return;
+        this.failed.add(job.page);
+        for (const waiter of this.take(job)) waiter.reject(error);
+        this.pump();
+      },
+    );
+  }
+
+  /** Decodes page `n` and keeps it scaled down, and at full resolution when that was asked for. */
+  private async decode(n: number, full: boolean): Promise<DjvuPageData> {
+    // Kept meanwhile, by decoding it the other way.
+    const kept = full ? this.fullPages.get(n) : this.pages.get(n);
+    if (kept) return kept;
+    const page = await this.decoder!.decode(n);
+    if (!this.pages.has(n)) this.keep(n, await this.reduce(page));
+    if (!full) return this.pages.get(n) ?? page;
+    this.fullPages.delete(n);
+    this.fullPages.set(n, page);
+    for (const m of this.fullPages.keys()) if (this.fullPages.size > FULL_PAGES_KEPT) this.fullPages.delete(m);
+    return page;
+  }
+
+  private take(job: Job): Job['waiters'] {
+    const key = `${job.page}${job.full ? 'f' : ''}`;
+    const waiters = this.jobs.get(key)?.waiters ?? job.waiters;
+    this.jobs.delete(key);
+    return waiters;
+  }
+
+  /** Adds a page; over the budget, drops the pages farthest from the reader that are no longer wanted. */
+  private keep(n: number, page: DjvuPageData): void {
+    if (this.closed) return;
+    this.pages.set(n, page);
+    this.bytes += pageBytes(page);
+    if (this.bytes <= this.budget) return;
+    const wanted = new Set(this.wanted());
+    const unwanted = [...this.pages.keys()].filter((m) => !wanted.has(m) && m !== n);
+    unwanted.sort((a, b) => Math.abs(b - this.position) - Math.abs(a - this.position));
+    for (const m of unwanted) {
+      if (this.bytes <= this.budget) break;
+      this.bytes -= pageBytes(this.pages.get(m)!);
+      this.pages.delete(m);
+    }
+  }
+}

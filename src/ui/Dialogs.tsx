@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { formatLabel, isFilterActive } from '../core/shelves';
 import { ALL_FORMATS, type BookFormat, type LibraryFilter } from '../core/types';
+import { GalaxySpinner } from './GalaxySpinner';
 import { Icon } from './icons';
 import './Dialogs.css';
 
@@ -72,6 +73,28 @@ export function FolderAccessDialog({ onAllow, onClose }: { onAllow: () => void; 
       <p className="dialog-message">eReaderPlus needs permission to read the files on this device to show your book folders and add the books in them.</p>
       <p className="dialog-message">Android lists this as “All files access”. Turn it on for eReaderPlus, then come back.</p>
     </Dialog>
+  );
+}
+
+/**
+ * Shown while the reader waits for a book still being imported: its book opens by itself once it is ready.
+ * Going back leaves the import running; the book stays in the library.
+ */
+export function BookWaitDialog({ title, onClose }: { title: string; onClose: () => void }) {
+  useEscape(onClose);
+  return (
+    <div className="dialog-backdrop" onClick={onClose}>
+      <div className="book-wait" role="dialog" aria-modal="true" aria-label={`Opening ${title}`} onClick={(e) => e.stopPropagation()}>
+        <GalaxySpinner />
+        <div className="book-wait-text" role="status">
+          <span className="book-wait-title">{title}</span>
+          <span>Getting the book ready…</span>
+        </div>
+        <button type="button" className="button-text book-wait-back" onClick={onClose} autoFocus>
+          Back to library
+        </button>
+      </div>
+    </div>
   );
 }
 

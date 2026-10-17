@@ -1,0 +1,50 @@
+/* The Milky Way spinner: the disc spins about its own axis while the whole galaxy rocks (wags) in 3D. */
+
+.galaxy-spinner {
+  width: 10rem;
+  height: 10rem;
+  perspective: 26rem;
+  filter: drop-shadow(0 0 0.9rem rgb(140 165 255 / 0.45));
+}
+
+.galaxy-wag {
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  animation: galaxy-wag 2.6s ease-in-out infinite alternate;
+}
+
+.galaxy-disc {
+  display: block;
+  width: 100%;
+  height: 100%;
+  animation: galaxy-spin 5s linear infinite;
+}
+
+/* Tilted towards the viewer, swinging from side to side and nodding a little. */
+@keyframes galaxy-wag {
+  from {
+    transform: rotateX(38deg) rotateY(-26deg);
+  }
+  to {
+    transform: rotateX(22deg) rotateY(26deg);
+  }
+}
+
+/* Spiral arms trail the rotation, as in a real galaxy. */
+@keyframes galaxy-spin {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .galaxy-wag {
+    animation: none;
+    transform: rotateX(30deg);
+  }
+
+  .galaxy-disc {
+    animation-duration: 20s;
+  }
+}

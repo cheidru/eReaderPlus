@@ -14,7 +14,8 @@ const sample = () => new Uint8Array(readFileSync('test/fixtures/books/sample.pdf
 describe('PDF', () => {
   it('writes one fixed-layout page document per page, sized in CSS px', async () => {
     const fs = memoryBookFs({ 'source.pdf': sample() });
-    const book = await importPdf(fs, 'source.pdf', 'sample.pdf', pdfjs);
+    const previews: unknown[] = [];
+    const book = await importPdf(fs, 'source.pdf', 'sample.pdf', pdfjs, (preview) => previews.push(preview));
     expect(book.title).toBe('PDF Sample');
     expect(book.authors).toEqual(['eReaderPlus samples']);
     expect(book.layout).toBe('pre-paginated');
@@ -27,9 +28,9 @@ describe('PDF', () => {
     expect(page).toContain('src="/__ereader__/pdf-page.js"');
     expect(page).toContain('data-source="../../source.pdf" data-page="3"');
 
-    // The cover is drawn after the import returns (Node has no canvas to draw it on).
+    // No cover in Node: it has no canvas to draw one.
     expect(book.cover).toBeNull();
-    expect(await book.pendingCover).toBeNull();
+    expect(previews).toEqual([{ title: 'PDF Sample', authors: ['eReaderPlus samples'], cover: null }]);
   });
 
   it('maps the outline to pages', async () => {

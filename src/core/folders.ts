@@ -5,7 +5,7 @@
  * changes. Books whose files disappear stay in the library; the app keeps its own copy.
  */
 import type { FileRef, Platform } from '../platform/platform';
-import { SUPPORTED_EXTENSIONS } from './import';
+import { SUPPORTED_EXTENSIONS, type ImportPreview } from './import';
 import { addBook } from './library';
 import type { LibraryEntry } from './types';
 
@@ -67,8 +67,10 @@ export interface ScanEvents {
   onProgress?: (done: number, total: number) => void;
   /** A file's import starts. */
   onImporting?: (file: FileRef) => void;
-  /** A new book is in the library. Its cover may still be being drawn (`coverReady`). */
-  onAdded?: (entry: LibraryEntry, coverReady: Promise<void> | null) => void;
+  /** The title and cover of the file being imported are known (see importBook). */
+  onPreview?: (preview: ImportPreview) => void;
+  /** The file being imported is done: its book (new, or the same book already in the library), or null if it failed. */
+  onImported?: (entry: LibraryEntry | null, isNew: boolean) => void;
 }
 
 /**
@@ -80,7 +82,7 @@ export function scanWatchedFolders(platform: Platform, events: ScanEvents = {}):
   return running;
 }
 
-async function scan(platform: Platform, { onProgress = () => {}, onImporting, onAdded }: ScanEvents): Promise<ScanResult> {
+async function scan(platform: Platform, { onProgress = () => {}, onImporting, onPreview, onImported }: ScanEvents): Promise<ScanResult> {
   const folders = await loadWatchedFolders(platform);
   const seen = (await platform.kvGet<Record<string, SeenFile>>(SEEN_KEY)) ?? {};
   const files = new Map<string, { file: FileRef; size: number; modified: number }>();
@@ -90,29 +92,23 @@ async function scan(platform: Platform, { onProgress = () => {}, onImporting, on
 
   const todo = [...files].filter(([path, f]) => seen[path]?.size !== f.size || seen[path]?.modified !== f.modified);
   const result: ScanResult = { found: files.size, added: 0, failed: 0 };
-  // A book's cover is drawn while the next file imports, but no further ahead: each open PDF holds its file in memory.
-  let drawing: Promise<void> | null = null;
   for (const [i, [path, f]] of todo.entries()) {
     onProgress(i, todo.length);
     onImporting?.(f.file);
     let bookId: string | null = null;
     try {
-      const { entry, isNew, coverReady } = await addBook(platform, f.file, { opened: false });
+      const { entry, isNew } = await addBook(platform, f.file, { opened: false, onPreview });
       bookId = entry.id;
-      if (isNew) {
-        result.added++;
-        onAdded?.(entry, coverReady);
-        await drawing;
-        drawing = coverReady;
-      }
+      if (isNew) result.added++;
+      onImported?.(entry, isNew);
     } catch {
       result.failed++;
+      onImported?.(null, false);
     }
     seen[path] = { size: f.size, modified: f.modified, bookId };
     // Saved as it goes, so a scan cut short (app closed) doesn't import the same files again.
     await platform.kvSet(SEEN_KEY, seen);
   }
-  await drawing;
   onProgress(todo.length, todo.length);
   return result;
 }

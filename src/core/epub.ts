@@ -4,7 +4,7 @@ import { xhtmlToHtml } from './html';
 import { injectReader, isHtmlMediaType } from './inject';
 import { resolveHref, splitFragment } from './paths';
 import { epubSeries } from './series';
-import type { BookManifest, SpineItem, TocItem } from './types';
+import type { BookManifest, OnPreview, SpineItem, TocItem } from './types';
 import { all, attr, child, children, first, parseXml, text } from './xml';
 
 export const CONTAINER_PATH = 'META-INF/container.xml';
@@ -16,13 +16,7 @@ interface ManifestItem {
   properties: string[];
 }
 
-export type ParsedBook = Omit<BookManifest, 'version' | 'id' | 'format'> & {
-  /**
-   * A cover still being drawn from the first page (PDF; pdf.js renders in its worker), which can take longer
-   * than the rest of the import: the book is readable before it settles. `cover` is null meanwhile.
-   */
-  pendingCover?: Promise<string | null>;
-};
+export type ParsedBook = Omit<BookManifest, 'version' | 'id' | 'format'>;
 
 export async function findPackagePath(fs: BookFs): Promise<string> {
   const container = parseXml(await fs.readText(CONTAINER_PATH), CONTAINER_PATH);
@@ -34,10 +28,12 @@ export async function findPackagePath(fs: BookFs): Promise<string> {
 }
 
 /** Parses an extracted EPUB, de-obfuscates fonts and injects the reader into spine documents. */
-export async function importEpub(fs: BookFs): Promise<ParsedBook> {
+export async function importEpub(fs: BookFs, onPreview?: OnPreview): Promise<ParsedBook> {
   const opfPath = await findPackagePath(fs);
   const opf = parseXml(await fs.readText(opfPath), opfPath);
   const book = parsePackage(opf, opfPath);
+  const { title, authors, cover } = book.parsed;
+  onPreview?.({ title, authors, cover });
 
   const identifiers = all(opf, 'identifier').map(text);
   await deobfuscateFonts(fs, book.uniqueIdentifier, identifiers);

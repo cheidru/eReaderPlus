@@ -2,7 +2,7 @@ import type { FileRef, Platform } from '../platform/platform';
 import { platformBookFs } from './bookfs';
 import { findPackagePath } from './epub';
 import { decodeFb2 } from './fb2';
-import { importBook } from './import';
+import { importBook, type ImportPreview } from './import';
 import { comicSeries, epubSeries, fb2Series } from './series';
 import {
   ALL_COLOR_THEMES,
@@ -26,6 +26,10 @@ const COLLECTIONS_KEY = 'collections';
 /** Set once books imported before series were read have been checked for one. */
 const SERIES_BACKFILL_KEY = 'series-backfill-done';
 const progressKey = (bookId: string) => `progress:${bookId}`;
+const viewKey = (bookId: string) => `view:${bookId}`;
+
+/** How a book is laid out, chosen for each book: one page or two side by side, and the cover alone in two-page view. */
+export type BookView = Pick<ReaderSettings, 'spread' | 'spreadCover'>;
 
 export async function loadLibrary(platform: Platform): Promise<LibraryEntry[]> {
   return (await platform.kvGet<LibraryEntry[]>(LIBRARY_KEY)) ?? [];
@@ -65,39 +69,30 @@ function entryFor(manifest: BookManifest, file: FileRef, opened: boolean): Libra
 export interface AddedBook {
   entry: LibraryEntry;
   isNew: boolean;
-  /** Set while the new book's cover is still being drawn; settles once the library entry has it. Never rejects. */
-  coverReady: Promise<void> | null;
 }
 
 /**
  * Imports a file and adds it to the library. If the same book is already in the library, the new copy is
  * discarded and the existing entry is returned with `isNew` false. A book opened right away counts as
  * read now; one found by a folder scan (`opened: false`) waits on the shelf until it is first opened.
- * The book is added as soon as it is readable; a cover still being drawn (`coverReady`) follows.
+ * The book is added once it is readable; `onPreview` tells its title and cover long before (see importBook).
  */
-export async function addBook(platform: Platform, file: FileRef, { opened = true }: { opened?: boolean } = {}): Promise<AddedBook> {
-  const { manifest, pendingCover } = await importBook(platform, file);
+export async function addBook(
+  platform: Platform,
+  file: FileRef,
+  { opened = true, onPreview }: { opened?: boolean; onPreview?: (preview: ImportPreview) => void } = {},
+): Promise<AddedBook> {
+  const manifest = await importBook(platform, file, onPreview);
   const entry = entryFor(manifest, file, opened);
   const existing = await updateLibrary(platform, (entries) => {
     const found = entries.find((e) => e.format === manifest.format && e.identifier === manifest.identifier);
     return [found ? entries : [entry, ...entries], found ?? null];
   });
   if (existing) {
-    // Deleted once a cover being drawn no longer writes into the folder; the existing book opens meanwhile.
-    void (pendingCover ?? Promise.resolve())
-      .catch(() => {})
-      .then(() => platform.deleteBook(manifest.id))
-      .catch(() => {});
-    return { entry: existing, isNew: false, coverReady: null };
+    void platform.deleteBook(manifest.id).catch(() => {});
+    return { entry: existing, isNew: false };
   }
-  const coverReady =
-    pendingCover
-      ?.then(async (cover) => {
-        if (!cover) return;
-        await updateLibrary(platform, (entries) => [entries.map((e) => (e.id === entry.id ? { ...e, cover } : e)), undefined]);
-      })
-      .catch((error: unknown) => console.warn('Could not save the cover:', error)) ?? null;
-  return { entry, isNew: true, coverReady };
+  return { entry, isNew: true };
 }
 
 /**
@@ -173,6 +168,7 @@ export async function saveLibraryPrefs(platform: Platform, prefs: LibraryPrefs):
 export async function removeBook(platform: Platform, bookId: string): Promise<void> {
   await updateLibrary(platform, (entries) => [entries.filter((e) => e.id !== bookId), undefined]);
   await platform.kvSet(progressKey(bookId), null);
+  await platform.kvSet(viewKey(bookId), null);
   await platform.deleteBook(bookId);
 }
 
@@ -191,6 +187,16 @@ export async function saveProgress(platform: Platform, bookId: string, progress:
 
 export function overallProgress(manifest: BookManifest, spineIndex: number, fraction: number): number {
   return Math.min(1, (spineIndex + fraction) / Math.max(1, manifest.spine.length));
+}
+
+/** The book's own view, or null before the book was first opened with this saved. */
+export async function loadBookView(platform: Platform, bookId: string): Promise<BookView | null> {
+  const view = await platform.kvGet<Partial<BookView>>(viewKey(bookId));
+  return view ? { spread: view.spread === true, spreadCover: view.spreadCover === true } : null;
+}
+
+export async function saveBookView(platform: Platform, bookId: string, view: BookView): Promise<void> {
+  await platform.kvSet(viewKey(bookId), view);
 }
 
 export async function loadSettings(platform: Platform): Promise<ReaderSettings> {

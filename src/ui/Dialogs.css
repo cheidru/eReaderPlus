@@ -8,6 +8,40 @@
   z-index: 40;
 }
 
+/* Waiting for a book being imported: the Milky Way spinner on a night sky, whatever the app's theme. */
+.book-wait {
+  width: min(20rem, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.75rem 1.5rem 1rem;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  color: #e8ecff;
+  background: radial-gradient(ellipse at 50% 30%, #1f2a5c 0%, #0d1230 55%, #070a1c 100%);
+  text-align: center;
+}
+
+.book-wait-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: #b8c0e6;
+}
+
+.book-wait-title {
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: #f2f4ff;
+  overflow-wrap: anywhere;
+}
+
+.book-wait .book-wait-back {
+  color: #aebcff;
+}
+
 .dialog {
   width: min(28rem, 100%);
   max-height: calc(100% - 2rem);

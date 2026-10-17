@@ -116,7 +116,7 @@ export function SettingsPanel({ settings, fixedLayout, canSpread, onChange, onCl
         <label className="rs-card rs-switch-row">
           <span>
             Two pages in landscape
-            <small>Side by side when the window is wider than it is tall</small>
+            <small>Side by side when the window is wider than it is tall. Kept for this book</small>
           </span>
           <input
             type="checkbox"
@@ -133,7 +133,7 @@ export function SettingsPanel({ settings, fixedLayout, canSpread, onChange, onCl
         <label className="rs-card rs-switch-row">
           <span>
             Cover alone
-            <small>The first page on its own, then pages 2–3, 4–5, … as in a printed book</small>
+            <small>The first page on its own, then pages 2–3, 4–5, … as in a printed book. Kept for this book</small>
           </span>
           <input
             type="checkbox"

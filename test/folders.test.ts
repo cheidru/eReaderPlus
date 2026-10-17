@@ -65,38 +65,35 @@ describe('watched folder scans', () => {
     expect(progress).toEqual(['0/2', '1/2', '2/2']);
   });
 
-  it('reports each book as it is added, and draws one cover while the next file imports', async () => {
+  it('reports each file as it is imported: its preview, then its book', async () => {
     const platform = fakePlatform({ '/b': [book('/b/1.pdf'), book('/b/2.pdf'), book('/b/3.pdf')] });
     await saveWatchedFolders(platform, ['/b']);
-    const covers = new Map<string, () => void>();
     const log: string[] = [];
-    addBook.mockImplementation(async (_platform: Platform, file: { ref: string }) => {
+    addBook.mockImplementation(async (_platform: Platform, file: { ref: string }, { onPreview }: { onPreview: (p: unknown) => void }) => {
       log.push(`import ${file.ref}`);
-      const coverReady = new Promise<void>((resolve) => covers.set(file.ref, resolve));
-      return { entry: { id: `id:${file.ref}` }, isNew: true, coverReady };
+      onPreview({ bookId: `id:${file.ref}`, title: file.ref, authors: [], cover: null });
+      if (file.ref === '/b/2.pdf') throw new Error('damaged');
+      return { entry: { id: `id:${file.ref}` }, isNew: file.ref !== '/b/3.pdf' };
     });
-    const scan = scanWatchedFolders(platform, {
+    const result = await scanWatchedFolders(platform, {
       onImporting: (file) => log.push(`importing ${file.ref}`),
-      onAdded: (entry) => log.push(`added ${entry.id}`),
+      onPreview: (preview) => log.push(`preview ${preview.title}`),
+      onImported: (entry, isNew) => log.push(`imported ${entry?.id ?? 'nothing'}${isNew ? ' (new)' : ''}`),
     });
-    await vi.waitFor(() => expect(log).toContain('added id:/b/2.pdf'));
-    // The third import waits for the first cover.
-    expect(log).not.toContain('importing /b/3.pdf');
-    covers.get('/b/1.pdf')!();
-    await vi.waitFor(() => expect(log).toContain('added id:/b/3.pdf'));
-    covers.get('/b/2.pdf')!();
-    covers.get('/b/3.pdf')!();
-    expect(await scan).toEqual({ found: 3, added: 3, failed: 0 });
+    expect(result).toEqual({ found: 3, added: 1, failed: 1 });
     expect(log).toEqual([
       'importing /b/1.pdf',
       'import /b/1.pdf',
-      'added id:/b/1.pdf',
+      'preview /b/1.pdf',
+      'imported id:/b/1.pdf (new)',
       'importing /b/2.pdf',
       'import /b/2.pdf',
-      'added id:/b/2.pdf',
+      'preview /b/2.pdf',
+      'imported nothing',
       'importing /b/3.pdf',
       'import /b/3.pdf',
-      'added id:/b/3.pdf',
+      'preview /b/3.pdf',
+      'imported id:/b/3.pdf',
     ]);
   });
 });

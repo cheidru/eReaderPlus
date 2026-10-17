@@ -12,6 +12,26 @@ export const MAX_ZOOM = 6;
 
 export type FixedSpread = 'pair' | 'single';
 
+/** A word or line of a DjVu page's OCR text, in the page's own pixels. */
+export interface DjvuTextZone {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+}
+
+/**
+ * A decoded DjVu page: its size and OCR text in the page's own pixels, and its image, which the app keeps scaled down
+ * to what the screen can show unless the full resolution was asked for (zooming in).
+ */
+export interface DjvuPageData {
+  width: number;
+  height: number;
+  image: ImageData;
+  zones: DjvuTextZone[] | null;
+}
+
 export interface FrameSettings {
   theme: Theme;
   flow: Flow;
@@ -51,7 +71,12 @@ export type HostMessage =
   /** Fixed layout: magnification (1 = fit to screen) and horizontal position (0..1) to keep across pages. */
   | { tag: typeof MESSAGE_TAG; type: 'zoom'; zoom: number; panX: number }
   /** Fixed layout: Space is held (or released) while the app has the focus, so mouse drags pan a zoomed page. */
-  | { tag: typeof MESSAGE_TAG; type: 'hand'; on: boolean };
+  | { tag: typeof MESSAGE_TAG; type: 'hand'; on: boolean }
+  /**
+   * DjVu: the answer to a page document's `djvuPage` request. `count` is the book's page count, or 0 when the app
+   * can't decode the book (the page document then decodes the page itself); `data` is null past the last page.
+   */
+  | { tag: typeof MESSAGE_TAG; type: 'djvuPage'; page: number; full: boolean; count: number; data: DjvuPageData | null };
 
 export type FrameMessage =
   | { type: 'ready' }
@@ -66,7 +91,9 @@ export type FrameMessage =
   /** Reflowable: Ctrl+wheel or pinch asks for a larger (1) or smaller (-1) font. */
   | { type: 'textzoom'; dir: 1 | -1 }
   | { type: 'link'; href: string }
-  | { type: 'external'; href: string };
+  | { type: 'external'; href: string }
+  /** DjVu: asks the app for a page (1-based), which it keeps decoded in memory while the book is open; `full`: at full resolution. */
+  | { type: 'djvuPage'; page: number; full: boolean };
 
 const KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', 'Escape']);
 
@@ -118,6 +145,8 @@ export function parseFrameMessage(data: unknown): FrameMessage | null {
       return isShortString(m.href) ? { type: 'link', href: m.href } : null;
     case 'external':
       return isShortString(m.href) && /^(https?:|mailto:)/i.test(m.href) ? { type: 'external', href: m.href } : null;
+    case 'djvuPage':
+      return Number.isInteger(m.page) && (m.page as number) >= 1 ? { type: 'djvuPage', page: m.page as number, full: m.full === true } : null;
     default:
       return null;
   }

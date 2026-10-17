@@ -4,7 +4,7 @@ import type { ParsedBook } from './epub';
 import { injectReader } from './inject';
 import { encodePath, extension } from './paths';
 import { comicSeries } from './series';
-import type { Series } from './types';
+import type { OnPreview, Series } from './types';
 import { child, escapeXml, parseXml, text } from './xml';
 
 const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp']);
@@ -21,7 +21,7 @@ export function comicImages(files: string[]): string[] {
     .sort(collator.compare);
 }
 
-export async function importCbz(fs: BookFs, fileName: string): Promise<ParsedBook> {
+export async function importCbz(fs: BookFs, fileName: string, onPreview?: OnPreview): Promise<ParsedBook> {
   const images = comicImages(fs.files);
   if (images.length === 0) throw new Error('The archive contains no images');
 
@@ -39,6 +39,8 @@ export async function importCbz(fs: BookFs, fileName: string): Promise<ParsedBoo
       // ComicInfo.xml is optional metadata; ignore it when malformed.
     }
   }
+
+  onPreview?.({ title: meta.title, authors: meta.authors, cover: images[0] });
 
   const spine = [];
   for (let i = 0; i < images.length; i++) {

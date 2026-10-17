@@ -38,7 +38,7 @@ const PATHS = {
  * eReaderPlus's own shelf icons, on the same 24×24 grid: `fill` shapes (inner shapes cut holes) or `lines`
  * drawn with a round pen (.icon-line in App.css).
  */
-type ShelfIconName = 'readingNow' | 'books' | 'toRead' | 'finished' | 'series' | 'collections' | 'formats';
+type ShelfIconName = 'readingNow' | 'books' | 'toRead' | 'finished' | 'series' | 'collections' | 'formats' | 'onePage' | 'twoPages';
 
 const SHELF_ICONS: Record<ShelfIconName, { fill: string[] } | { lines: string[] }> = {
   // Reading glasses.
@@ -68,6 +68,22 @@ const SHELF_ICONS: Record<ShelfIconName, { fill: string[] } | { lines: string[] 
   collections: { fill: ['M5 4.5h4.2l2 2.5H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2zM12 17.6l-2.9-2.8a1.8 1.8 0 0 1 2.9-2.1 1.8 1.8 0 0 1 2.9 2.1z'] },
   // "Aa".
   formats: { lines: ['M3 19 7.5 5.5 12 19', 'M4.6 14.5h5.8', 'M14 16.2a2.8 2.8 0 1 0 5.6 0 2.8 2.8 0 1 0-5.6 0z', 'M19.6 12.5V19'] },
+  // The reader's page view: one page with lines of text, or two pages side by side.
+  onePage: {
+    fill: ['M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z', 'M7 5v14h10V5z', 'M9 8h6v1.6H9z', 'M9 11.2h6v1.6H9z', 'M9 14.4h4v1.6H9z'],
+  },
+  twoPages: {
+    fill: [
+      'M3 5h8v14H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z',
+      'M3.8 6.8v10.4h5.4V6.8z',
+      'M13 5h8a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-8z',
+      'M14.8 6.8v10.4h5.4V6.8z',
+      'M5 9h3v1.4H5z',
+      'M5 12h3v1.4H5z',
+      'M16 9h3v1.4h-3z',
+      'M16 12h3v1.4h-3z',
+    ],
+  },
 };
 
 export type IconName = keyof typeof PATHS | ShelfIconName;

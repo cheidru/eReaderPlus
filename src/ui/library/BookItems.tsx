@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react';
+import type { ImportPreview } from '../../core/import';
 import { formatLabel } from '../../core/shelves';
 import type { LibraryEntry, LibraryLayout } from '../../core/types';
 import { bookUrl, type Platform } from '../../platform';
@@ -14,13 +14,12 @@ function placeholderColor(title: string): string {
   return PLACEHOLDER_COLORS[Math.abs(hash) % PLACEHOLDER_COLORS.length];
 }
 
-/** Ids of books whose cover is still being drawn: their placeholder shimmers until the cover arrives. */
-export const DrawingCovers = createContext<ReadonlySet<string>>(new Set());
-
 /** A book file being imported, shown as a card until its book replaces it. */
 export interface ImportingBook {
   key: string;
   fileName: string;
+  /** Its title and cover, as soon as the importer knows them. */
+  preview: ImportPreview | null;
 }
 
 function CoverPlaceholder({ title, author, drawing }: { title: string; author?: string; drawing: boolean }) {
@@ -33,9 +32,8 @@ function CoverPlaceholder({ title, author, drawing }: { title: string; author?: 
 }
 
 export function Cover({ platform, entry }: { platform: Platform; entry: LibraryEntry }) {
-  const drawing = useContext(DrawingCovers).has(entry.id);
   if (entry.cover) return <img className="cover-img" src={bookUrl(platform, entry.id, entry.cover)} alt="" loading="lazy" draggable={false} />;
-  return <CoverPlaceholder title={entry.title} author={entry.authors[0]} drawing={drawing} />;
+  return <CoverPlaceholder title={entry.title} author={entry.authors[0]} drawing={false} />;
 }
 
 /** Star, clock, double check and collections: the toggles ReadEra puts on every book. */
@@ -123,16 +121,35 @@ export function ShelfTile({ platform, entry, books, onMenu }: ItemProps) {
   );
 }
 
-/** A book file still being imported: its name on a shimmering placeholder, in the card or shelf layout. */
-export function ImportingItem({ book, layout }: { book: ImportingBook; layout: LibraryLayout }) {
-  const title = book.fileName.replace(/\.[^.]+$/, '');
-  const cover = <CoverPlaceholder title={title} drawing />;
+/** The title shown for a book being imported: its own once known, its file name until then. */
+export const importingTitle = (book: ImportingBook) => book.preview?.title || book.fileName.replace(/\.[^.]+$/, '');
+
+interface ImportingItemProps {
+  platform: Platform;
+  book: ImportingBook;
+  layout: LibraryLayout;
+  /** Opens the book once it is imported (showing a wait until then). */
+  onOpen: () => void;
+}
+
+/**
+ * A book file still being imported, in the card or shelf layout: its cover and title as soon as the importer knows
+ * them, its file name on a shimmering placeholder until then.
+ */
+export function ImportingItem({ platform, book, layout, onOpen }: ImportingItemProps) {
+  const title = importingTitle(book);
+  const { preview } = book;
+  const cover = preview?.cover ? (
+    <img className="cover-img" src={bookUrl(platform, preview.bookId, preview.cover)} alt="" draggable={false} />
+  ) : (
+    <CoverPlaceholder title={title} author={preview?.authors[0]} drawing />
+  );
   if (layout === 'shelf') {
     return (
-      <li className="book-card shelf-tile book-importing" aria-busy="true" title={book.fileName}>
-        <div className="book-open">
+      <li className="book-card shelf-tile book-importing" aria-busy="true">
+        <button type="button" className="book-open" onClick={onOpen} title={title}>
           <span className="tile-cover">{cover}</span>
-        </div>
+        </button>
         <div className="tile-footer">
           <span className="tile-status">Importing…</span>
         </div>
@@ -141,13 +158,14 @@ export function ImportingItem({ book, layout }: { book: ImportingBook; layout: L
   }
   return (
     <li className="book-card book-importing" aria-busy="true">
-      <div className="book-open" title={book.fileName}>
+      <button type="button" className="book-open" onClick={onOpen} title={title}>
         <span className="book-cover">{cover}</span>
         <span className="book-text">
           <span className="book-title">{title}</span>
+          {preview && preview.authors.length > 0 && <span className="book-author">{preview.authors.join(', ')}</span>}
           <span className="book-meta">Importing…</span>
         </span>
-      </div>
+      </button>
     </li>
   );
 }

@@ -64,6 +64,13 @@ describe('FB2', () => {
     expect(await fs.readText('text/ch003.xhtml')).toContain('<img src="../images/pic.png" alt=""/>');
   });
 
+  it('writes the cover first and tells it before converting the chapters', async () => {
+    const fs = memoryBookFs({ 'source.fb2': new TextEncoder().encode(FB2) });
+    const previews: unknown[] = [];
+    await importFb2(fs, 'source.fb2', (preview) => previews.push({ ...preview, files: fs.files.filter((f) => f !== 'source.fb2') }));
+    expect(previews).toEqual([{ title: 'Война и мир', authors: ['Лев Толстой'], cover: 'images/cover.jpg', files: ['images/cover.jpg'] }]);
+  });
+
   it('decodes windows-1251 files using the XML declaration', () => {
     const head = new TextEncoder().encode('<?xml version="1.0" encoding="windows-1251"?><a>');
     const tail = new TextEncoder().encode('</a>');

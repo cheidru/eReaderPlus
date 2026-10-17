@@ -13,7 +13,9 @@ describe('CBZ', () => {
 
   it('builds one fixed-layout page per image', async () => {
     const fs = memoryBookFs({ 'b/2.jpg': new Uint8Array(1), 'b/1 a.jpg': new Uint8Array(1) });
-    const book = await importCbz(fs, 'My Comic.cbz');
+    const previews: unknown[] = [];
+    const book = await importCbz(fs, 'My Comic.cbz', (preview) => previews.push(preview));
+    expect(previews).toEqual([{ title: 'My Comic', authors: [], cover: 'b/1 a.jpg' }]);
     expect(book.title).toBe('My Comic');
     expect(book.layout).toBe('pre-paginated');
     expect(book.cover).toBe('b/1 a.jpg');
