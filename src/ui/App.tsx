@@ -22,6 +22,7 @@ import { DEFAULT_LIBRARY_PREFS, DEFAULT_SETTINGS, type EntryFlags, type LibraryE
 import { detectPlatform, type EngineInfo, type FileRef } from '../platform';
 import { AboutDialog } from './AboutDialog';
 import { BookWaitDialog, CollectionsDialog, ConfirmDialog, FolderAccessDialog, PromptDialog } from './Dialogs';
+import { FormatsButton } from './FormatsButton';
 import { importingTitle, type ImportingBook } from './library/BookItems';
 import { LibraryView } from './library/LibraryView';
 import type { BookHandlers, ToggleFlag } from './library/shelfInfo';
@@ -328,6 +329,7 @@ export function App() {
   const waitingBook = importing.find((b) => b.key === waitingFor);
   const detailsEntry = view.kind === 'details' ? entries.find((e) => e.id === view.bookId) : undefined;
   const collectionsEntry = modal?.kind === 'collections' ? entries.find((e) => e.id === modal.bookId) : undefined;
+  const formatsButton = <FormatsButton filter={prefs.filter} onChange={(filter) => updatePrefs({ ...prefs, filter })} />;
 
   return (
     <div
@@ -408,6 +410,7 @@ export function App() {
             onScan: () => void runScan(),
           }}
           engine={engine}
+          formatsButton={formatsButton}
           onChange={updatePrefs}
           onBack={() => setView({ kind: 'library' })}
           onAbout={() => setModal({ kind: 'about' })}
@@ -415,6 +418,7 @@ export function App() {
       ) : view.kind === 'folderPicker' ? (
         <FolderPicker
           platform={platform}
+          formatsButton={formatsButton}
           onPick={(folder) => {
             const next = withFolder(watchedFolders, folder);
             setWatchedFolders(next);
@@ -428,6 +432,7 @@ export function App() {
           platform={platform}
           entry={detailsEntry}
           books={books}
+          formatsButton={formatsButton}
           onBack={() => setView({ kind: 'library' })}
           onAuthor={(author) => {
             setLocation({ shelf: 'authors', group: author });

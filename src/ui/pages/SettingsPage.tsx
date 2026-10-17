@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { ALL_COLOR_THEMES, type AppTheme, type LibraryLayout, type LibraryPrefs } from '../../core/types';
 import type { EngineInfo } from '../../platform';
 import { Icon } from '../icons';
@@ -19,6 +20,8 @@ interface Props {
   prefs: LibraryPrefs;
   folders: FolderSettings;
   engine: EngineInfo | null;
+  /** The bar's drop-down of the formats shown. */
+  formatsButton: ReactNode;
   onChange: (prefs: LibraryPrefs) => void;
   onBack: () => void;
   onAbout: () => void;
@@ -34,7 +37,7 @@ const APP_THEMES: { value: AppTheme; label: string }[] = [
   { value: 'dark', label: 'Dark' },
 ];
 
-export function SettingsPage({ prefs, folders, engine, onChange, onBack, onAbout }: Props) {
+export function SettingsPage({ prefs, folders, engine, formatsButton, onChange, onBack, onAbout }: Props) {
   return (
     <div className="page">
       <header className="app-bar">
@@ -42,6 +45,7 @@ export function SettingsPage({ prefs, folders, engine, onChange, onBack, onAbout
           <Icon name="back" />
         </button>
         <h1 className="app-bar-title">Settings</h1>
+        {formatsButton}
       </header>
 
       <main className="page-content settings">

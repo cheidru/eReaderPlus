@@ -100,8 +100,10 @@ export const ALL_COLOR_THEMES: ColorTheme[] = ['dusk', 'ink', 'paper', 'forest',
 export type SortKey = 'title' | 'author' | 'series' | 'format' | 'added' | 'read';
 
 export interface LibraryFilter {
-  /** Formats to show; empty shows every format. */
+  /** Formats to show; empty shows every format, unless noFormats is set. */
   formats: BookFormat[];
+  /** Every format is turned off: no books are shown until one is turned on again. */
+  noFormats?: boolean;
   hideFinished: boolean;
 }
 

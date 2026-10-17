@@ -220,6 +220,8 @@
   padding: 0;
   max-width: 52rem;
   display: grid;
+  /* Long names shorten inside the column instead of widening it past the page. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.5rem;
 }
 
@@ -280,33 +282,8 @@
   min-width: 0;
 }
 
-.format-item .group-row:disabled {
-  cursor: default;
-}
-
 .format-show {
   color: var(--text-muted);
-}
-
-.checkbox {
-  flex: none;
-  width: 1.4rem;
-  height: 1.4rem;
-  display: grid;
-  place-items: center;
-  border: 2px solid var(--text-muted);
-  border-radius: 3px;
-}
-
-.checkbox-on {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-text);
-}
-
-.checkbox .icon {
-  width: 1.1rem;
-  height: 1.1rem;
 }
 
 /* --- Folders: book files listed after the subfolders --- */
@@ -330,7 +307,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  padding: 0.5rem 0;
 }
 
 .file-meta {
@@ -444,7 +420,7 @@
 .shelf-header {
   flex: none;
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto 1fr auto auto auto;
   align-items: center;
   gap: 0.5rem;
   padding: calc(0.5rem + var(--safe-top)) calc(0.5rem + var(--safe-right)) 0.5rem calc(0.5rem + var(--safe-left));
@@ -577,6 +553,13 @@
   margin: 0.25rem auto 1.25rem;
   font-size: 1.9rem;
   font-weight: 700;
+}
+
+/* Over a list of rows the title and path line up with the rows, in either layout. */
+.library .library-content[data-rows] .shelf-title,
+.library .library-content[data-rows] .shelf-subtitle {
+  max-width: 52rem;
+  padding: 0;
 }
 
 .shelf-grid {

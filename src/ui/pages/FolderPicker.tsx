@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { SCAN_EXTENSIONS } from '../../core/folders';
 import type { FolderListing, Platform } from '../../platform';
 import { Icon } from '../icons';
@@ -6,12 +6,14 @@ import './Pages.css';
 
 interface Props {
   platform: Platform;
+  /** The bar's drop-down of the formats shown. */
+  formatsButton: ReactNode;
   onPick: (folder: string) => void;
   onCancel: () => void;
 }
 
 /** The app's own folder browser, like ReadEra's Folders view: storage roots, then folders, down to the one to watch. */
-export function FolderPicker({ platform, onPick, onCancel }: Props) {
+export function FolderPicker({ platform, formatsButton, onPick, onCancel }: Props) {
   const [access, setAccess] = useState<boolean | null>(null);
   const [listing, setListing] = useState<FolderListing | null>(null);
 
@@ -47,6 +49,7 @@ export function FolderPicker({ platform, onPick, onCancel }: Props) {
           <h1 className="app-bar-title">Choose a folder</h1>
           <span className="app-bar-subtitle">{listing?.path || 'Storage'}</span>
         </div>
+        {formatsButton}
         <button type="button" className="icon-button" onClick={onCancel} aria-label="Cancel">
           <Icon name="close" />
         </button>

@@ -216,8 +216,9 @@ interface FilterDialogProps {
 
 export function FilterDialog({ filter, countFor, onApply, onClose }: FilterDialogProps) {
   const [draft, setDraft] = useState(filter);
+  // Picking a format here also ends "no formats" (Formats page), which would otherwise still hide every book.
   const toggleFormat = (format: BookFormat) =>
-    setDraft({ ...draft, formats: draft.formats.includes(format) ? draft.formats.filter((f) => f !== format) : [...draft.formats, format] });
+    setDraft({ formats: draft.formats.includes(format) ? draft.formats.filter((f) => f !== format) : [...draft.formats, format], hideFinished: draft.hideFinished });
   return (
     <Dialog title="Filter" onClose={onClose} className="filter-dialog">
       <div className="chips" role="group" aria-label="Formats">
@@ -262,8 +263,10 @@ export function FilterDialog({ filter, countFor, onApply, onClose }: FilterDialo
 export interface MenuItem {
   label: string;
   onSelect: () => void;
-  /** Shown as a radio button: true selected, false unselected, undefined no radio. */
+  /** Shown as a radio button (or a checkbox): true selected, false unselected, undefined none. */
   checked?: boolean;
+  /** `checked` is shown as a checkbox, and ticking it keeps the menu open to tick more. */
+  checkbox?: boolean;
   /** The item opens more items instead of closing the menu. */
   submenu?: boolean;
   danger?: boolean;
@@ -274,10 +277,12 @@ interface PopupMenuProps {
   anchor: HTMLElement;
   title?: string;
   items: MenuItem[];
+  /** Opens under the button, as a drop-down list, rather than over it. */
+  dropdown?: boolean;
   onClose: () => void;
 }
 
-export function PopupMenu({ anchor, title, items, onClose }: PopupMenuProps) {
+export function PopupMenu({ anchor, title, items, dropdown, onClose }: PopupMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   useEscape(onClose);
@@ -289,13 +294,14 @@ export function PopupMenu({ anchor, title, items, onClose }: PopupMenuProps) {
     const m = menu.getBoundingClientRect();
     const margin = 8;
     const left = Math.max(margin, Math.min(a.right - m.width, window.innerWidth - m.width - margin));
-    const top = Math.max(margin, Math.min(a.top, window.innerHeight - m.height - margin));
+    const top = Math.max(margin, Math.min(dropdown ? a.bottom + 4 : a.top, window.innerHeight - m.height - margin));
     setPosition({ top, left });
-  }, [anchor, items, title]);
+  }, [anchor, items, title, dropdown]);
 
+  // Focus goes to the first item when the menu opens or moves to a submenu, not when a ticked item updates it.
   useEffect(() => {
     ref.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus();
-  }, [items]);
+  }, [title]);
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
@@ -321,20 +327,28 @@ export function PopupMenu({ anchor, title, items, onClose }: PopupMenuProps) {
           <button
             key={item.label}
             type="button"
-            role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
+            role={item.checked === undefined ? 'menuitem' : item.checkbox ? 'menuitemcheckbox' : 'menuitemradio'}
             aria-checked={item.checked}
             className={item.danger ? 'menu-item menu-item-danger' : 'menu-item'}
             onClick={() => {
               item.onSelect();
-              if (!item.submenu) onClose();
+              if (!item.submenu && !item.checkbox) onClose();
             }}
           >
             <span>{item.label}</span>
-            {item.checked !== undefined && <span className={item.checked ? 'radio radio-on' : 'radio'} aria-hidden="true" />}
+            {item.checked !== undefined && (item.checkbox ? <Checkbox on={item.checked} /> : <span className={item.checked ? 'radio radio-on' : 'radio'} aria-hidden="true" />)}
             {item.submenu && <Icon name="chevronRight" className="menu-arrow" />}
           </button>
         ))}
       </div>
     </div>
+  );
+}
+
+export function Checkbox({ on }: { on: boolean }) {
+  return (
+    <span className={on ? 'checkbox checkbox-on' : 'checkbox'} aria-hidden="true">
+      {on && <Icon name="check" />}
+    </span>
   );
 }

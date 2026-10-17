@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { SCAN_EXTENSIONS } from '../../core/folders';
 import {
+  allFormatsShown,
   applyFilter,
   booksAt,
   formatLabel,
@@ -10,13 +11,15 @@ import {
   isGroupShelf,
   shownExtensions,
   sortAt,
+  toggleAllFormats,
   toggleFormat,
   type LibraryLocation,
   type Shelf,
 } from '../../core/shelves';
 import { ALL_FORMATS, type BookFormat, type LibraryEntry, type LibraryPrefs, type SortKey } from '../../core/types';
 import type { FileRef, FolderListing, Platform } from '../../platform';
-import { FilterDialog, PopupMenu, type MenuItem } from '../Dialogs';
+import { Checkbox, FilterDialog, PopupMenu, type MenuItem } from '../Dialogs';
+import { FormatsButton } from '../FormatsButton';
 import { Icon, type IconName } from '../icons';
 import { FolderAccessPrompt } from '../pages/FolderPicker';
 import { BookCard, ImportingItem, ShelfTile, type ImportingBook } from './BookItems';
@@ -199,18 +202,20 @@ export function LibraryView(props: Props) {
             </nav>
           )}
         </div>
+        <FormatsButton filter={prefs.filter} onChange={(filter) => onPrefsChange({ ...prefs, filter })} />
         {layoutButton}
         {moreButton}
       </header>
 
-      <main className="library-content">
+      {/* Lists of rows (folders, groups, formats) are narrower than the book grids; their title lines up with them. */}
+      <main className="library-content" data-rows={listsGroups || listsFormats || inFolders || undefined}>
         {(inGroup || !SHELF_TABS.includes(location.shelf)) && <h1 className="shelf-title">{title}</h1>}
         {inFolders && location.group && <p className="shelf-subtitle">{location.group}</p>}
 
         {isFilterActive(prefs.filter) && !listsGroups && !listsFormats && !inFolders && (
           <div className="filter-bar">
             <span>
-              Filter: {[...prefs.filter.formats.map(formatLabel), ...(prefs.filter.hideFinished ? ['not finished'] : [])].join(', ')} · {visible.length} of{' '}
+              Filter: {[...(prefs.filter.noFormats ? ['no formats'] : prefs.filter.formats.map(formatLabel)), ...(prefs.filter.hideFinished ? ['not finished'] : [])].join(', ')} · {visible.length} of{' '}
               {shelfBooks.length}
             </span>
             <button type="button" className="button-text" onClick={() => onPrefsChange({ ...prefs, filter: { formats: [], hideFinished: false } })}>
@@ -344,14 +349,13 @@ interface FormatListProps {
 function FormatList({ entries, prefs, onPrefsChange, onShowFormat }: FormatListProps) {
   const counts = new Map<BookFormat, number>();
   for (const entry of entries) counts.set(entry.format, (counts.get(entry.format) ?? 0) + 1);
-  const shownCount = ALL_FORMATS.filter((f) => isFormatShown(prefs.filter, f)).length;
-  const all = prefs.filter.formats.length === 0;
+  const all = allFormatsShown(prefs.filter);
   return (
     <>
       <p className="list-hint">Books in the ticked formats are shown everywhere: on every shelf and in Folders.</p>
       <ul className="group-list">
         <li className="format-item">
-          <button type="button" role="checkbox" aria-checked={all} className="group-row" onClick={() => onPrefsChange({ ...prefs, filter: { ...prefs.filter, formats: [] } })}>
+          <button type="button" role="checkbox" aria-checked={all} className="group-row" onClick={() => onPrefsChange({ ...prefs, filter: toggleAllFormats(prefs.filter) })}>
             <Checkbox on={all} />
             <span className="group-label">All formats</span>
             <span className="group-count">{entries.length}</span>
@@ -360,7 +364,6 @@ function FormatList({ entries, prefs, onPrefsChange, onShowFormat }: FormatListP
         {ALL_FORMATS.map((format) => {
           const shown = isFormatShown(prefs.filter, format);
           const count = counts.get(format) ?? 0;
-          const last = shown && shownCount === 1;
           return (
             <li key={format} className="format-item">
               <button
@@ -369,8 +372,6 @@ function FormatList({ entries, prefs, onPrefsChange, onShowFormat }: FormatListP
                 aria-checked={shown}
                 aria-label={`${formatLabel(format)}, ${count === 1 ? '1 book' : `${count} books`}`}
                 className="group-row"
-                disabled={last}
-                title={last ? 'At least one format stays shown' : undefined}
                 onClick={() => onPrefsChange({ ...prefs, filter: toggleFormat(prefs.filter, format) })}
               >
                 <Checkbox on={shown} />
@@ -391,14 +392,6 @@ function FormatList({ entries, prefs, onPrefsChange, onShowFormat }: FormatListP
         })}
       </ul>
     </>
-  );
-}
-
-function Checkbox({ on }: { on: boolean }) {
-  return (
-    <span className={on ? 'checkbox checkbox-on' : 'checkbox'} aria-hidden="true">
-      {on && <Icon name="check" />}
-    </span>
   );
 }
 

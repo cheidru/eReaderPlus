@@ -12,6 +12,8 @@ interface Props {
   platform: Platform;
   entry: LibraryEntry;
   books: BookHandlers;
+  /** The bar's drop-down of the formats shown. */
+  formatsButton: ReactNode;
   onBack: () => void;
   onAuthor: (author: string) => void;
   onSeries: (name: string) => void;
@@ -22,7 +24,7 @@ interface Props {
 const UI_LOCALE = 'en';
 const dateTime = new Intl.DateTimeFormat(UI_LOCALE, { dateStyle: 'long', timeStyle: 'short' });
 
-export function BookDetails({ platform, entry, books, onBack, onAuthor, onSeries, onCollection }: Props) {
+export function BookDetails({ platform, entry, books, formatsButton, onBack, onAuthor, onSeries, onCollection }: Props) {
   const [manifest, setManifest] = useState<BookManifest | null>(null);
 
   useEffect(() => {
@@ -44,6 +46,7 @@ export function BookDetails({ platform, entry, books, onBack, onAuthor, onSeries
           <Icon name="back" />
         </button>
         <h1 className="app-bar-title">About book</h1>
+        {formatsButton}
         <button type="button" className="button-text" onClick={() => books.onOpen(entry.id)}>
           Read
         </button>

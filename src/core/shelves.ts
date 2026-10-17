@@ -103,7 +103,7 @@ export function applyFilter(entries: LibraryEntry[], filter: LibraryFilter, sear
   const query = search.trim().toLocaleLowerCase();
   return entries.filter(
     (e) =>
-      (filter.formats.length === 0 || filter.formats.includes(e.format)) &&
+      isFormatShown(filter, e.format) &&
       !(filter.hideFinished && e.finished) &&
       (!query || [e.title, ...e.authors, e.series?.name ?? '', e.fileName ?? ''].some((text) => text.toLocaleLowerCase().includes(query))),
   );
@@ -138,18 +138,28 @@ function bySeriesIndex(a: LibraryEntry, b: LibraryEntry): number {
 
 /** Whether books in a format are shown; the format selection applies everywhere in the library. */
 export function isFormatShown(filter: LibraryFilter, format: BookFormat): boolean {
-  return filter.formats.length === 0 || filter.formats.includes(format);
+  return !filter.noFormats && (filter.formats.length === 0 || filter.formats.includes(format));
 }
 
-/**
- * Turns one format on or off. All formats on is stored as no selection; the last format shown can't be
- * turned off, since showing nothing at all is never what the reader wants.
- */
+export function allFormatsShown(filter: LibraryFilter): boolean {
+  return !filter.noFormats && filter.formats.length === 0;
+}
+
+/** The filter showing these formats: all of them is stored as no selection, none of them as noFormats. */
+function withShownFormats(filter: LibraryFilter, shown: BookFormat[]): LibraryFilter {
+  const formats = shown.length === ALL_FORMATS.length ? [] : ALL_FORMATS.filter((f) => shown.includes(f));
+  return shown.length === 0 ? { formats, hideFinished: filter.hideFinished, noFormats: true } : { formats, hideFinished: filter.hideFinished };
+}
+
+/** Turns one format on or off. */
 export function toggleFormat(filter: LibraryFilter, format: BookFormat): LibraryFilter {
   const shown = ALL_FORMATS.filter((f) => isFormatShown(filter, f));
-  const next = shown.includes(format) ? shown.filter((f) => f !== format) : [...shown, format];
-  if (next.length === 0) return filter;
-  return { ...filter, formats: next.length === ALL_FORMATS.length ? [] : ALL_FORMATS.filter((f) => next.includes(f)) };
+  return withShownFormats(filter, shown.includes(format) ? shown.filter((f) => f !== format) : [...shown, format]);
+}
+
+/** "All formats": turns every format off when all are on, and on otherwise. */
+export function toggleAllFormats(filter: LibraryFilter): LibraryFilter {
+  return withShownFormats(filter, allFormatsShown(filter) ? [] : ALL_FORMATS);
 }
 
 /** The formats a file with this extension can turn out to be (a .mobi file may hold an AZW3 book). */
@@ -175,7 +185,7 @@ export function shownExtensions(filter: LibraryFilter, extensions: string[]): st
 }
 
 export function isFilterActive(filter: LibraryFilter): boolean {
-  return filter.formats.length > 0 || filter.hideFinished;
+  return !allFormatsShown(filter) || filter.hideFinished;
 }
 
 /** Sorts after any real text, so books missing the sort key go last. */

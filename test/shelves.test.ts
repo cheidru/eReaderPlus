@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyFilter, booksAt, groupsOf, isFormatShown, NO_AUTHOR, shownExtensions, sortAt, sortEntries, toggleFormat } from '../src/core/shelves';
+import { applyFilter, booksAt, groupsOf, isFilterActive, isFormatShown, NO_AUTHOR, shownExtensions, sortAt, sortEntries, toggleAllFormats, toggleFormat } from '../src/core/shelves';
 import { ALL_FORMATS } from '../src/core/types';
 import type { LibraryEntry } from '../src/core/types';
 
@@ -73,7 +73,7 @@ describe('shelves', () => {
     expect(ids(applyFilter(extra, { formats: [], hideFinished: false }, 'dune'))).toHaveLength(4);
   });
 
-  it('turns formats on and off, keeping at least one, and stores all formats as no selection', () => {
+  it('turns formats on and off, and stores all formats as no selection', () => {
     const none = { formats: [], hideFinished: false };
     const noEpub = toggleFormat(none, 'epub');
     expect(noEpub.formats).toEqual(ALL_FORMATS.filter((f) => f !== 'epub'));
@@ -81,8 +81,22 @@ describe('shelves', () => {
     expect(isFormatShown(noEpub, 'pdf')).toBe(true);
     expect(toggleFormat(noEpub, 'epub')).toEqual(none);
     const onlyPdf = { formats: ['pdf' as const], hideFinished: true };
-    expect(toggleFormat(onlyPdf, 'pdf')).toBe(onlyPdf);
     expect(toggleFormat(onlyPdf, 'fb2')).toEqual({ formats: ['pdf', 'fb2'], hideFinished: true });
+    // Turning off the last format shows nothing, until a format is turned on again.
+    const nothing = toggleFormat(onlyPdf, 'pdf');
+    expect(nothing).toEqual({ formats: [], hideFinished: true, noFormats: true });
+    expect(applyFilter(books, nothing)).toEqual([]);
+    expect(isFilterActive(nothing)).toBe(true);
+    expect(toggleFormat(nothing, 'fb2')).toEqual({ formats: ['fb2'], hideFinished: true });
+  });
+
+  it('turns all formats off when all are on, and all on otherwise', () => {
+    const all = { formats: [], hideFinished: false };
+    const nothing = toggleAllFormats(all);
+    expect(ALL_FORMATS.some((f) => isFormatShown(nothing, f))).toBe(false);
+    expect(shownExtensions(nothing, ['epub', 'pdf'])).toEqual([]);
+    expect(toggleAllFormats(nothing)).toEqual(all);
+    expect(toggleAllFormats({ formats: ['pdf'], hideFinished: true })).toEqual({ formats: [], hideFinished: true });
   });
 
   it('maps file extensions to the formats shown, a .mobi file counting as MOBI or AZW3', () => {

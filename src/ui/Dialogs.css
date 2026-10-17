@@ -257,6 +257,52 @@
   background: radial-gradient(circle, var(--accent) 0 45%, transparent 50%);
 }
 
+.checkbox {
+  flex: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--text-muted);
+  border-radius: 3px;
+}
+
+.checkbox-on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.checkbox .icon {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.menu-item .checkbox {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* The formats button: a dot on it says some formats are hidden. */
+.formats-button {
+  position: relative;
+}
+
+.formats-button-filtered::after {
+  content: '';
+  position: absolute;
+  top: 0.3rem;
+  right: 0.3rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.app-bar .formats-button-filtered::after {
+  background: var(--accent-on-dark);
+}
+
 /* --- About dialog --- */
 
 .about-list {
