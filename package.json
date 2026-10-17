@@ -27,9 +27,9 @@
     "test:e2e": "npm run build && npm run samples && node test/e2e/desktop.e2e.mjs"
   },
   "dependencies": {
-    "@capacitor/android": "^8.5.2",
+    "@capacitor/android": "^8.5.3",
     "@capacitor/app": "^8.1.2",
-    "@capacitor/core": "^8.5.2",
+    "@capacitor/core": "^8.5.3",
     "@capacitor/preferences": "^8.0.1",
     "chmlib-ts": "^0.3.0",
     "electron-updater": "^6.8.9",
@@ -39,7 +39,7 @@
     "yauzl": "^3.4.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.5.2",
+    "@capacitor/cli": "^8.5.3",
     "@types/node": "^26.6.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
