@@ -1,9 +1,30 @@
 import type { FileRef, Platform } from '../platform/platform';
+import { platformBookFs } from './bookfs';
+import { findPackagePath } from './epub';
+import { decodeFb2 } from './fb2';
 import { importBook } from './import';
-import { DEFAULT_SETTINGS, type BookManifest, type LibraryEntry, type Progress, type ReaderSettings } from './types';
+import { comicSeries, epubSeries, fb2Series } from './series';
+import {
+  ALL_COLOR_THEMES,
+  DEFAULT_LIBRARY_PREFS,
+  DEFAULT_SETTINGS,
+  type BookManifest,
+  type EntryFlags,
+  type LibraryEntry,
+  type LibraryPrefs,
+  type Progress,
+  type ReaderSettings,
+  type Series,
+} from './types';
+import { first, parseXml } from './xml';
 
 const LIBRARY_KEY = 'library';
 const SETTINGS_KEY = 'settings';
+const PREFS_KEY = 'library-prefs';
+/** Collection names, kept separately so a collection survives while it is empty. */
+const COLLECTIONS_KEY = 'collections';
+/** Set once books imported before series were read have been checked for one. */
+const SERIES_BACKFILL_KEY = 'series-backfill-done';
 const progressKey = (bookId: string) => `progress:${bookId}`;
 
 export async function loadLibrary(platform: Platform): Promise<LibraryEntry[]> {
@@ -23,7 +44,7 @@ function updateLibrary<T>(platform: Platform, update: (entries: LibraryEntry[]) 
   return run;
 }
 
-function entryFor(manifest: BookManifest): LibraryEntry {
+function entryFor(manifest: BookManifest, file: FileRef, opened: boolean): LibraryEntry {
   const now = Date.now();
   return {
     id: manifest.id,
@@ -32,27 +53,121 @@ function entryFor(manifest: BookManifest): LibraryEntry {
     title: manifest.title,
     authors: manifest.authors,
     cover: manifest.cover,
+    series: manifest.series,
     addedAt: now,
-    lastOpenedAt: now,
+    lastOpenedAt: opened ? now : 0,
     progress: 0,
+    source: file.ref,
+    fileName: file.name,
   };
 }
 
+export interface AddedBook {
+  entry: LibraryEntry;
+  isNew: boolean;
+  /** Set while the new book's cover is still being drawn; settles once the library entry has it. Never rejects. */
+  coverReady: Promise<void> | null;
+}
+
 /**
- * Imports a file and adds it to the library. If the same book is already in the library,
- * the new copy is discarded and the existing entry is returned.
+ * Imports a file and adds it to the library. If the same book is already in the library, the new copy is
+ * discarded and the existing entry is returned with `isNew` false. A book opened right away counts as
+ * read now; one found by a folder scan (`opened: false`) waits on the shelf until it is first opened.
+ * The book is added as soon as it is readable; a cover still being drawn (`coverReady`) follows.
  */
-export async function addBook(platform: Platform, file: FileRef): Promise<LibraryEntry> {
-  const manifest = await importBook(platform, file);
+export async function addBook(platform: Platform, file: FileRef, { opened = true }: { opened?: boolean } = {}): Promise<AddedBook> {
+  const { manifest, pendingCover } = await importBook(platform, file);
+  const entry = entryFor(manifest, file, opened);
   const existing = await updateLibrary(platform, (entries) => {
     const found = entries.find((e) => e.format === manifest.format && e.identifier === manifest.identifier);
-    return [found ? entries : [entryFor(manifest), ...entries], found ?? null];
+    return [found ? entries : [entry, ...entries], found ?? null];
   });
   if (existing) {
-    await platform.deleteBook(manifest.id);
-    return existing;
+    // Deleted once a cover being drawn no longer writes into the folder; the existing book opens meanwhile.
+    void (pendingCover ?? Promise.resolve())
+      .catch(() => {})
+      .then(() => platform.deleteBook(manifest.id))
+      .catch(() => {});
+    return { entry: existing, isNew: false, coverReady: null };
   }
-  return entryFor(manifest);
+  const coverReady =
+    pendingCover
+      ?.then(async (cover) => {
+        if (!cover) return;
+        await updateLibrary(platform, (entries) => [entries.map((e) => (e.id === entry.id ? { ...e, cover } : e)), undefined]);
+      })
+      .catch((error: unknown) => console.warn('Could not save the cover:', error)) ?? null;
+  return { entry, isNew: true, coverReady };
+}
+
+/**
+ * Books imported before series were read have none recorded. Once, reads their series from the files kept
+ * in each book's folder. Returns true if any book got one.
+ */
+export async function backfillSeries(platform: Platform): Promise<boolean> {
+  if (await platform.kvGet<boolean>(SERIES_BACKFILL_KEY)) return false;
+  const found = new Map<string, Series>();
+  for (const entry of await loadLibrary(platform)) {
+    if (entry.series) continue;
+    // A book whose metadata file can't be read simply has no series.
+    const series = await storedSeries(platform, entry).catch(() => undefined);
+    if (series) found.set(entry.id, series);
+  }
+  if (found.size > 0) {
+    await updateLibrary(platform, (entries) => [entries.map((e) => (!e.series && found.has(e.id) ? { ...e, series: found.get(e.id) } : e)), undefined]);
+  }
+  await platform.kvSet(SERIES_BACKFILL_KEY, true);
+  return found.size > 0;
+}
+
+async function storedSeries(platform: Platform, entry: LibraryEntry): Promise<Series | undefined> {
+  const fs = platformBookFs(platform, entry.id, []);
+  switch (entry.format) {
+    case 'epub': {
+      const opfPath = await findPackagePath(fs);
+      return epubSeries(parseXml(await fs.readText(opfPath), opfPath));
+    }
+    case 'fb2':
+      // Only a plain .fb2 import keeps its source under a known name; zipped FB2 can't be found again.
+      return fb2Series(first(parseXml(decodeFb2(await fs.readBinary('source.fb2')), 'FB2'), 'title-info'));
+    case 'cbz':
+      return comicSeries(parseXml(await fs.readText('ComicInfo.xml'), 'ComicInfo.xml').documentElement);
+    default:
+      return undefined;
+  }
+}
+
+export async function updateEntryFlags(platform: Platform, bookId: string, flags: EntryFlags): Promise<void> {
+  await updateLibrary(platform, (entries) => [entries.map((e) => (e.id === bookId ? { ...e, ...flags } : e)), undefined]);
+}
+
+export async function loadCollections(platform: Platform): Promise<string[]> {
+  return (await platform.kvGet<string[]>(COLLECTIONS_KEY)) ?? [];
+}
+
+export async function saveCollections(platform: Platform, names: string[]): Promise<void> {
+  await platform.kvSet(COLLECTIONS_KEY, names);
+}
+
+/** Deletes a collection and takes every book out of it. The books stay in the library. */
+export async function deleteCollection(platform: Platform, name: string): Promise<void> {
+  await saveCollections(platform, (await loadCollections(platform)).filter((n) => n !== name));
+  await updateLibrary(platform, (entries) => [
+    entries.map((e) => (e.collections?.includes(name) ? { ...e, collections: e.collections.filter((c) => c !== name) } : e)),
+    undefined,
+  ]);
+}
+
+export async function loadLibraryPrefs(platform: Platform): Promise<LibraryPrefs> {
+  const stored = await platform.kvGet<Partial<LibraryPrefs>>(PREFS_KEY);
+  const prefs = { ...DEFAULT_LIBRARY_PREFS, ...stored, filter: { ...DEFAULT_LIBRARY_PREFS.filter, ...stored?.filter } };
+  // A theme that has since been withdrawn falls back to the default.
+  if (!ALL_COLOR_THEMES.includes(prefs.colorTheme)) prefs.colorTheme = DEFAULT_LIBRARY_PREFS.colorTheme;
+  return prefs;
+}
+
+export async function saveLibraryPrefs(platform: Platform, prefs: LibraryPrefs): Promise<void> {
+  await platform.kvSet(PREFS_KEY, prefs);
 }
 
 export async function removeBook(platform: Platform, bookId: string): Promise<void> {

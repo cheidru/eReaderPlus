@@ -1,0 +1,65 @@
+# Mails the developer when Electron ships a newer Chromium than the app's Electron, once per Chromium version.
+# The app itself never checks. Repository secrets (Settings > Secrets and variables > Actions):
+#   SMTP_URL       e.g. smtps://smtp.gmail.com:465
+#   SMTP_USERNAME  the mailbox that sends, e.g. a Gmail address
+#   SMTP_PASSWORD  its app password (Gmail: Google Account > Security > App passwords)
+#   MAIL_FROM      the sending address
+#   MAIL_TO        recipients, comma-separated (kept out of this public file)
+name: Engine updates
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - id: check
+        run: node scripts/check-engine.mjs
+      # A cache entry per Chromium version remembers that it was mailed (daily runs keep it from expiring).
+      - id: mailed
+        if: steps.check.outputs.chrome
+        uses: actions/cache/restore@v4
+        with:
+          path: .engine-notice
+          key: engine-notice-${{ steps.check.outputs.chrome }}
+      - name: Mail the update
+        if: steps.check.outputs.chrome && steps.mailed.outputs.cache-hit != 'true'
+        env:
+          SMTP_URL: ${{ secrets.SMTP_URL }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+        run: |
+          set -euo pipefail
+          for name in SMTP_URL SMTP_USERNAME SMTP_PASSWORD MAIL_FROM MAIL_TO; do
+            if [ -z "${!name}" ]; then echo "::error::Repository secret $name is not set"; exit 1; fi
+          done
+          recipients=()
+          IFS=',' read -ra addresses <<< "$MAIL_TO"
+          for address in "${addresses[@]}"; do recipients+=(--mail-rcpt "$(echo "$address" | xargs)"); done
+          {
+            echo "From: eReaderPlus engine check <$MAIL_FROM>"
+            echo "To: $MAIL_TO"
+            echo "Subject: $(cat .engine-notice/subject)"
+            echo "Content-Type: text/plain; charset=utf-8"
+            echo
+            cat .engine-notice/body
+          } > mail.txt
+          curl --silent --show-error --ssl-reqd --url "$SMTP_URL" --user "$SMTP_USERNAME:$SMTP_PASSWORD" \
+            --mail-from "$MAIL_FROM" "${recipients[@]}" --upload-file mail.txt
+      - if: steps.check.outputs.chrome && steps.mailed.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .engine-notice
+          key: engine-notice-${{ steps.check.outputs.chrome }}

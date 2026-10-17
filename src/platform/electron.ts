@@ -47,5 +47,9 @@ export function createElectronPlatform(api: ElectronNativeApi): Platform {
     },
     openExternal: api.openExternal,
     setColorScheme: api.setColorScheme,
+    hasFolderAccess: async () => true,
+    requestFolderAccess: async () => true,
+    listFolder: api.listFolder,
+    findBookFiles: api.findBookFiles,
   };
 }

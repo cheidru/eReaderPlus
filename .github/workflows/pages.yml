@@ -1,0 +1,31 @@
+# Publishes the download page (site/) to https://cheidru.github.io/eReaderPlus/.
+# One-time setup: Settings > Pages > Build and deployment > Source: GitHub Actions.
+# The page reads the newest release from the GitHub API, so it needs no redeploy when a version is released.
+name: Download page
+
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency: pages
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

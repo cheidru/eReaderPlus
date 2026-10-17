@@ -49,9 +49,14 @@ fileAssociations:
     role: Viewer
 win:
   target: nsis
+  # A fixed name keeps https://github.com/cheidru/eReaderPlus/releases/latest/download/eReaderPlus-Setup.exe
+  # pointing at the newest installer (the download page links to it).
+  artifactName: ${productName}-Setup.${ext}
 nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
+  # One click, per user, no admin prompt: installs, adds Start menu and desktop shortcuts, and starts the app.
+  oneClick: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
 mac:
   target: dmg
   category: public.app-category.books
@@ -60,9 +65,11 @@ linux:
     - AppImage
     - deb
   category: Office
-# Auto-update: fill in the GitHub repository that hosts releases, then
-# `electron-builder --publish always` uploads installers + latest*.yml for electron-updater.
-# publish:
-#   provider: github
-#   owner: YOUR_GITHUB_USER
-#   repo: eReaderPlus
+  # Required by .deb (electron-builder would otherwise take it from an author email in package.json).
+  maintainer: cheidru <chei@yandex.ru>
+# Where electron-updater looks for new versions. The Release workflow (.github/workflows/release.yml) attaches the
+# installer, its blockmap and latest.yml to the GitHub Release of each version tag.
+publish:
+  provider: github
+  owner: cheidru
+  repo: eReaderPlus

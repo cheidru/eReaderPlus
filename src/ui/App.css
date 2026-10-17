@@ -1,22 +1,37 @@
+/*
+ * App colors (everything around the book). The color theme chosen in Settings sets most of them on .app
+ * (src/ui/themes.ts), for the light or dark app theme; these, the default (Dusk, dark), apply until it does. The book's
+ * own colors come from ReaderSettings.theme.
+ */
 :root {
-  --bg: #f6f5f2;
-  --surface: #ffffff;
-  --surface-raised: #ffffff;
-  --text: #1d1d1f;
-  --text-muted: #6b6b70;
-  --border: #e2e0db;
-  --accent: #2f6fdf;
-  --accent-text: #ffffff;
-  --danger: #c0392b;
-  --shadow: 0 8px 28px rgb(0 0 0 / 0.14);
-  --radius: 10px;
+  --bar: #3d2c63;
+  --bar-accent: #c3a6ff;
+  --accent-on-dark: #ffb36b;
+  --panel: #2e283b;
+  --panel-card: #3d354d;
+  --bar-text: #ffffff;
+  --bar-muted: rgb(255 255 255 / 0.72);
+  --bg: #14111b;
+  --surface: #201b2b;
+  --surface-hover: #2a2437;
+  --menu: #2e283b;
+  --text: #efebf5;
+  --text-muted: #a69db6;
+  --border: #332c42;
+  --accent: #ffb36b;
+  --accent-text: #241200;
+  --highlight: #b693ff;
+  --danger: #ef5350;
+  --scrim: rgb(0 0 0 / 0.55);
+  --shadow: 0 8px 28px rgb(0 0 0 / 0.5);
+  --radius: 4px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 15px;
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 * {
@@ -38,6 +53,7 @@ body {
 }
 
 .app {
+  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -45,27 +61,28 @@ body {
   color: var(--text);
 }
 
-.app[data-theme='sepia'] {
-  --bg: #efe6d2;
-  --surface: #f7f0e1;
-  --surface-raised: #fbf6ea;
-  --text: #4a3b2c;
-  --text-muted: #85715c;
-  --border: #dccfb5;
-  --accent: #9a5b26;
+.app[data-ui='light'] {
+  --danger: #c62828;
+  --scrim: rgb(0 0 0 / 0.35);
+  --shadow: 0 8px 28px rgb(0 0 0 / 0.18);
+  color-scheme: light;
 }
 
-.app[data-theme='dark'] {
-  --bg: #121214;
-  --surface: #1c1c1f;
-  --surface-raised: #26262a;
-  --text: #e6e6e9;
-  --text-muted: #9a9aa2;
-  --border: #33333a;
-  --accent: #7aa7ff;
-  --accent-text: #0d1424;
-  --shadow: 0 8px 28px rgb(0 0 0 / 0.5);
-  color-scheme: dark;
+.icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  fill: currentColor;
+  flex: none;
+  display: block;
+}
+
+/* Line icons (reading glasses, "Aa"): a round pen as heavy as the filled icons look. */
+.icon .icon-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .app-unsupported {
@@ -86,11 +103,90 @@ body {
   flex-wrap: wrap;
 }
 
+/* --- App bar (ReadEra's teal toolbar), shared by the library, settings, details and reader --- */
+
+.app-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: calc(3.5rem + var(--safe-top));
+  padding: var(--safe-top) calc(0.25rem + var(--safe-right)) 0 calc(0.25rem + var(--safe-left));
+  background: var(--bar);
+  color: var(--bar-text);
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.25);
+  position: relative;
+  z-index: 5;
+}
+
+.app-bar-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0 0 0 0.75rem;
+  font-size: 1.3rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A title with a smaller line under it (the folder browser shows the current path there). */
+.app-bar-heading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-bar-heading .app-bar-title {
+  flex: none;
+  font-size: 1.15rem;
+}
+
+.app-bar-subtitle {
+  margin-left: 0.75rem;
+  color: var(--bar-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-bar-search {
+  flex: 1;
+  min-width: 0;
+  margin-left: 0.5rem;
+  font: inherit;
+  font-size: 1.1rem;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--bar-muted);
+  padding: 0.35rem 0;
+  outline: none;
+}
+
+.app-bar-search::placeholder {
+  color: var(--bar-muted);
+}
+
+.app-bar-search:focus-visible {
+  outline: none;
+  border-bottom-color: var(--bar-text);
+}
+
+/* The bar is dark in either app theme. */
+.app-bar .button-text {
+  color: var(--accent-on-dark);
+}
+
+/* --- Buttons --- */
+
 .button {
   appearance: none;
   border: 1px solid transparent;
-  border-radius: 8px;
-  padding: 0.5rem 1rem;
+  border-radius: var(--radius);
+  padding: 0.55rem 1.1rem;
   font: inherit;
   font-weight: 600;
   background: var(--accent);
@@ -109,6 +205,26 @@ body {
   border-color: var(--border);
 }
 
+/* Material text button: dialog actions, "READ" in the details bar. */
+.button-text {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0.6rem 0.9rem;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.button-text:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .icon-button {
   appearance: none;
   border: none;
@@ -116,15 +232,24 @@ body {
   color: inherit;
   font: inherit;
   font-size: 1.15rem;
-  min-width: 2.5rem;
-  min-height: 2.5rem;
-  border-radius: 8px;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
   cursor: pointer;
+  flex: none;
 }
 
-.icon-button:hover,
-.button-ghost:hover {
-  background: color-mix(in srgb, var(--text) 8%, transparent);
+.icon-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.icon-button:hover:not(:disabled),
+.button-ghost:hover,
+.button-text:hover:not(:disabled) {
+  background: color-mix(in srgb, currentColor 12%, transparent);
 }
 
 .link-button {
@@ -138,21 +263,81 @@ body {
   cursor: pointer;
 }
 
+:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: 2px;
+}
+
+/* Material switch (ReadEra settings, reader panel). Use on <input type="checkbox" role="switch">. */
+.switch {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 2.4rem;
+  height: 0.95rem;
+  margin: 0 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 30%, transparent);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -0.25rem;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 50%;
+  background: #e0e0e0;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
+  transform: translateY(-50%);
+  transition:
+    left 0.15s,
+    background 0.15s;
+}
+
+.switch:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.switch:checked {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.switch:checked::after {
+  left: calc(100% - 1.2rem);
+  background: var(--accent);
+}
+
+/* --- Snackbar --- */
+
 .toast {
   position: fixed;
   left: 50%;
-  bottom: calc(5rem + var(--safe-bottom));
+  bottom: calc(1.5rem + var(--safe-bottom));
   transform: translateX(-50%);
+  width: max-content;
   max-width: min(36rem, calc(100vw - 2rem));
-  padding: 0.75rem 1rem;
+  padding: 0.85rem 1.1rem;
   border-radius: var(--radius);
-  background: var(--surface-raised);
-  color: var(--text);
+  background: #323232;
+  color: #ffffff;
   box-shadow: var(--shadow);
   display: flex;
-  gap: 1rem;
+  gap: 1.5rem;
   align-items: center;
   z-index: 50;
+}
+
+.toast .link-button {
+  color: var(--accent-on-dark);
+  text-decoration: none;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .toast-error {

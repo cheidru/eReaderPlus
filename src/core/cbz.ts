@@ -3,6 +3,8 @@ import type { BookFs } from './bookfs';
 import type { ParsedBook } from './epub';
 import { injectReader } from './inject';
 import { encodePath, extension } from './paths';
+import { comicSeries } from './series';
+import type { Series } from './types';
 import { child, escapeXml, parseXml, text } from './xml';
 
 const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp']);
@@ -23,7 +25,7 @@ export async function importCbz(fs: BookFs, fileName: string): Promise<ParsedBoo
   const images = comicImages(fs.files);
   if (images.length === 0) throw new Error('The archive contains no images');
 
-  const meta = { title: fileName.replace(/\.[^.]+$/, ''), authors: [] as string[], language: '' };
+  const meta = { title: fileName.replace(/\.[^.]+$/, ''), authors: [] as string[], language: '', series: undefined as Series | undefined };
   if (fs.files.includes('ComicInfo.xml')) {
     try {
       const info = parseXml(await fs.readText('ComicInfo.xml'), 'ComicInfo.xml').documentElement;
@@ -32,6 +34,7 @@ export async function importCbz(fs: BookFs, fileName: string): Promise<ParsedBoo
       meta.title = text(child(info, 'Title')) || [series, number && `#${number}`].filter(Boolean).join(' ') || meta.title;
       meta.authors = text(child(info, 'Writer')).split(',').map((s) => s.trim()).filter(Boolean);
       meta.language = text(child(info, 'LanguageISO'));
+      meta.series = comicSeries(info);
     } catch {
       // ComicInfo.xml is optional metadata; ignore it when malformed.
     }
@@ -55,6 +58,7 @@ export async function importCbz(fs: BookFs, fileName: string): Promise<ParsedBoo
     authors: meta.authors,
     language: meta.language,
     cover: images[0],
+    series: meta.series,
     layout: 'pre-paginated',
     direction: 'ltr',
     spine,

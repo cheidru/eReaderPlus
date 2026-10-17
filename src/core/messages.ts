@@ -10,6 +10,8 @@ export const MESSAGE_TAG = 'ereader';
 /** Largest magnification of a fixed-layout page, on top of fitting it to the screen. */
 export const MAX_ZOOM = 6;
 
+export type FixedSpread = 'pair' | 'single';
+
 export interface FrameSettings {
   theme: Theme;
   flow: Flow;
@@ -17,8 +19,15 @@ export interface FrameSettings {
   fontFamily: string;
   lineHeight: number;
   margin: number;
+  fontWeight: number;
+  spread: boolean;
   overrideStyles: boolean;
   layout: 'reflowable' | 'pre-paginated';
+  /**
+   * Fixed layout (PDF, DjVu) in a two-page spread: 'pair' shows the next page beside the document's own, 'single'
+   * shows its page alone (a book's cover), centered and as large as the pages of a pair.
+   */
+  fixedSpread: FixedSpread | null;
 }
 
 /** Where to go after a document loads or on request. */
@@ -26,14 +35,23 @@ export type GotoTarget =
   | { kind: 'fraction'; value: number }
   | { kind: 'page'; value: number }
   | { kind: 'end' }
-  | { kind: 'fragment'; value: string };
+  | { kind: 'fragment'; value: string }
+  /**
+   * The `occurrence`-th match of a search inside the book (see textsearch.ts), which is also highlighted.
+   * In a fixed-layout spread, `part` says which of the pages shown holds it (the element marked data-ereader-part).
+   */
+  | { kind: 'search'; query: string; occurrence: number; part?: number };
 
 export type HostMessage =
   | { tag: typeof MESSAGE_TAG; type: 'settings'; settings: FrameSettings }
   | { tag: typeof MESSAGE_TAG; type: 'goto'; target: GotoTarget }
   | { tag: typeof MESSAGE_TAG; type: 'turn'; dir: 1 | -1 }
+  /** Removes the highlight of a search match. */
+  | { tag: typeof MESSAGE_TAG; type: 'clearSearch' }
   /** Fixed layout: magnification (1 = fit to screen) and horizontal position (0..1) to keep across pages. */
-  | { tag: typeof MESSAGE_TAG; type: 'zoom'; zoom: number; panX: number };
+  | { tag: typeof MESSAGE_TAG; type: 'zoom'; zoom: number; panX: number }
+  /** Fixed layout: Space is held (or released) while the app has the focus, so mouse drags pan a zoomed page. */
+  | { tag: typeof MESSAGE_TAG; type: 'hand'; on: boolean };
 
 export type FrameMessage =
   | { type: 'ready' }
@@ -50,7 +68,7 @@ export type FrameMessage =
   | { type: 'link'; href: string }
   | { type: 'external'; href: string };
 
-const KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', ' ', 'Home', 'End', 'Escape']);
+const KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', 'Escape']);
 
 function isNum(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);

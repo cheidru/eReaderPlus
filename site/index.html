@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Download eReaderPlus</title>
+    <meta name="description" content="Download the eReaderPlus ebook reader for Windows and Android." />
+    <!-- Both made by scripts/make-icons.mjs. -->
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <style>
+      /* Colors of the app's default theme (Dusk, src/ui/App.css), with a light variant. */
+      :root {
+        --bar: #3d2c63;
+        --bar-text: #ffffff;
+        --bar-muted: rgb(255 255 255 / 0.72);
+        --bg: #14111b;
+        --surface: #201b2b;
+        --text: #efebf5;
+        --text-muted: #a69db6;
+        --border: #332c42;
+        --accent: #ffb36b;
+        --accent-text: #241200;
+        --highlight: #c3a6ff;
+        --radius: 8px;
+        color-scheme: dark;
+        font-family: Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
+        font-size: 16px;
+        line-height: 1.5;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f5f2fa;
+          --surface: #ffffff;
+          --text: #1d1828;
+          --text-muted: #5d546d;
+          --border: #ddd6e8;
+          --highlight: #5b3fa0;
+          color-scheme: light;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+      }
+      a {
+        color: var(--highlight);
+      }
+      header {
+        background: var(--bar);
+        color: var(--bar-text);
+        padding: 48px 16px 40px;
+        text-align: center;
+      }
+      header .logo {
+        display: block;
+        margin: 0 auto 12px;
+        filter: drop-shadow(0 6px 16px rgb(0 0 0 / 0.35));
+      }
+      header h1 {
+        margin: 0 0 8px;
+        font-size: 2.25rem;
+        letter-spacing: -0.01em;
+      }
+      header p {
+        margin: 0 auto;
+        max-width: 36rem;
+        color: var(--bar-muted);
+      }
+      main {
+        max-width: 60rem;
+        margin: 0 auto;
+        padding: 32px 16px 48px;
+      }
+      #release {
+        margin: 0 0 24px;
+        text-align: center;
+        color: var(--text-muted);
+        min-height: 1.5em;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+        gap: 16px;
+      }
+      .card {
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px;
+      }
+      .card.this-device {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 1px var(--accent);
+      }
+      .card h2 {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 0 0 4px;
+        font-size: 1.25rem;
+      }
+      .badge {
+        display: none;
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--accent-text);
+        background: var(--accent);
+        border-radius: 999px;
+        padding: 2px 8px;
+        white-space: nowrap;
+      }
+      .this-device .badge {
+        display: inline-block;
+      }
+      .requirements {
+        margin: 0 0 16px;
+        color: var(--text-muted);
+        font-size: 0.875rem;
+      }
+      .button {
+        display: block;
+        text-align: center;
+        font-weight: 600;
+        text-decoration: none;
+        color: var(--accent-text);
+        background: var(--accent);
+        border-radius: var(--radius);
+        padding: 12px 16px;
+      }
+      .button:hover {
+        filter: brightness(1.08);
+      }
+      .button:focus-visible {
+        outline: 3px solid var(--highlight);
+        outline-offset: 2px;
+      }
+      .button[aria-disabled='true'] {
+        pointer-events: none;
+        opacity: 0.45;
+      }
+      .size {
+        margin: 6px 0 0;
+        text-align: center;
+        font-size: 0.8125rem;
+        color: var(--text-muted);
+        min-height: 1.25em;
+      }
+      .card ol {
+        margin: 16px 0 0;
+        padding-left: 1.25rem;
+        font-size: 0.9375rem;
+      }
+      .card li + li {
+        margin-top: 6px;
+      }
+      .card .note {
+        margin: 12px 0 0;
+        font-size: 0.875rem;
+        color: var(--text-muted);
+      }
+      .unavailable {
+        margin: 0;
+        padding: 12px 16px;
+        text-align: center;
+        border: 1px dashed var(--border);
+        border-radius: var(--radius);
+        color: var(--text-muted);
+      }
+      footer {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px 24px;
+        border-top: 1px solid var(--border);
+        padding: 24px 16px;
+        font-size: 0.875rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <img class="logo" src="favicon.svg" alt="" width="88" height="88" />
+      <h1>eReaderPlus</h1>
+      <p>
+        An ebook reader that shows books with an up-to-date browser engine. Opens EPUB, PDF, MOBI, AZW3, FB2, CBZ,
+        DjVu, CHM and LIT.
+      </p>
+    </header>
+
+    <main>
+      <p id="release" aria-live="polite"></p>
+
+      <div class="cards">
+        <section class="card" data-platform="windows">
+          <h2>Windows <span class="badge">This device</span></h2>
+          <p class="requirements">Windows 10 or 11</p>
+          <a class="button" href="https://github.com/cheidru/eReaderPlus/releases/latest/download/eReaderPlus-Setup.exe">
+            Download for Windows
+          </a>
+          <p class="size" data-asset="eReaderPlus-Setup.exe"></p>
+          <ol>
+            <li>Open the downloaded <b>eReaderPlus-Setup.exe</b>.</li>
+            <li>If Windows says “Windows protected your PC”, click <b>More info</b>, then <b>Run anyway</b>.</li>
+            <li>eReaderPlus installs in a few seconds and starts. Open it later from the Start menu or the desktop icon.</li>
+          </ol>
+          <p class="note">New versions install themselves automatically.</p>
+        </section>
+
+        <section class="card" data-platform="android">
+          <h2>Android <span class="badge">This device</span></h2>
+          <p class="requirements">Android 7.0 or newer</p>
+          <a class="button" href="https://github.com/cheidru/eReaderPlus/releases/latest/download/eReaderPlus.apk">
+            Download for Android
+          </a>
+          <p class="size" data-asset="eReaderPlus.apk"></p>
+          <ol>
+            <li>Open the downloaded <b>eReaderPlus.apk</b> (from the notification or your Downloads).</li>
+            <li>If asked, allow your browser to <b>install unknown apps</b>, then go back.</li>
+            <li>Tap <b>Install</b>. If Play Protect warns about an unknown app, tap <b>More details</b>, then <b>Install anyway</b>.</li>
+            <li>Start eReaderPlus from its icon on the home screen or in the app list.</li>
+          </ol>
+          <p class="note">eReaderPlus tells you when a new version is out: tap <b>Download</b> in its notice, then <b>Update</b>. Your books and settings are kept.</p>
+        </section>
+
+        <section class="card" data-platform="ios">
+          <h2>iPhone and iPad <span class="badge">This device</span></h2>
+          <p class="requirements">Planned</p>
+          <p class="unavailable">Not available yet</p>
+        </section>
+      </div>
+    </main>
+
+    <footer>
+      <a href="https://github.com/cheidru/eReaderPlus">Source code</a>
+      <a href="https://github.com/cheidru/eReaderPlus/releases">All versions</a>
+      <a href="https://github.com/cheidru/eReaderPlus/blob/main/README.md">License: GPL-3.0</a>
+    </footer>
+
+    <script>
+      const ua = navigator.userAgent;
+      const isIos = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+      const device = /Android/.test(ua) ? 'android' : isIos ? 'ios' : /Windows/.test(ua) ? 'windows' : null;
+
+      // The card for this device goes first and is highlighted.
+      const ownCard = device && document.querySelector(`.card[data-platform="${device}"]`);
+      if (ownCard) {
+        ownCard.classList.add('this-device');
+        ownCard.parentElement.prepend(ownCard);
+      }
+
+      const release = document.getElementById('release');
+      const dateFormat = new Intl.DateTimeFormat('en-GB', { dateStyle: 'long' });
+      const megabytes = (bytes) => `${(bytes / 1024 / 1024).toFixed(0)} MB`;
+
+      fetch('https://api.github.com/repos/cheidru/eReaderPlus/releases/latest', {
+        headers: { Accept: 'application/vnd.github+json' },
+      })
+        .then((response) => {
+          if (response.status === 404) {
+            release.textContent = 'The first version is not released yet. Check back soon.';
+            for (const button of document.querySelectorAll('.button')) {
+              button.setAttribute('aria-disabled', 'true');
+              button.removeAttribute('href');
+            }
+            return null;
+          }
+          return response.ok ? response.json() : null;
+        })
+        .then((latest) => {
+          if (!latest) return;
+          const version = latest.tag_name.replace(/^v/, '');
+          release.textContent = `Version ${version}, released ${dateFormat.format(new Date(latest.published_at))}`;
+          for (const size of document.querySelectorAll('[data-asset]')) {
+            const asset = latest.assets.find((a) => a.name === size.dataset.asset);
+            if (asset) size.textContent = megabytes(asset.size);
+          }
+        })
+        // Offline or rate-limited: the download links work without the version details.
+        .catch(() => {});
+    </script>
+  </body>
+</html>

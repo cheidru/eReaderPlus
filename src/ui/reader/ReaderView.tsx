@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { bookTexts, findInTexts, isSearchable } from '../../core/booksearch';
 import { loadManifest } from '../../core/import';
 import { loadProgress, markOpened, overallProgress, saveProgress } from '../../core/library';
-import { MESSAGE_TAG, parseFrameMessage, type FrameSettings, type GotoTarget, type HostMessage } from '../../core/messages';
+import { MESSAGE_TAG, parseFrameMessage, type FixedSpread, type FrameSettings, type GotoTarget, type HostMessage } from '../../core/messages';
 import { splitFragment } from '../../core/paths';
+import { hasPageSpreads, spreadEnd, spreadFits, spreadStart } from '../../core/spread';
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP, type BookManifest, type Progress, type ReaderSettings, type TocItem } from '../../core/types';
 import { bookUrl, type Platform } from '../../platform';
+import { Icon } from '../icons';
+import { MIN_QUERY_LENGTH, NO_SEARCH, SearchPanel, type SearchState } from './SearchPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { TocPanel } from './TocPanel';
 import './ReaderView.css';
@@ -24,9 +28,13 @@ interface Location {
   fraction: number;
 }
 
-type Panel = 'toc' | 'settings' | null;
+type Panel = 'toc' | 'settings' | 'search' | null;
 
 const WHEEL_THROTTLE_MS = 250;
+/** Search waits until typing pauses this long. */
+const SEARCH_DELAY_MS = 300;
+/** Above this many documents, chapter marks on the position slider would merge into a solid bar. */
+const MAX_SLIDER_MARKS = 120;
 
 export function ReaderView({ platform, bookId, settings, onSettingsChange, onClose, onError }: Props) {
   const [manifest, setManifest] = useState<BookManifest | null>(null);
@@ -34,6 +42,11 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
   const [location, setLocation] = useState<Location>({ page: 0, pageCount: 1, fraction: 0 });
   const [chromeVisible, setChromeVisible] = useState(true);
   const [panel, setPanel] = useState<Panel>(null);
+  const [search, setSearch] = useState<SearchState>(NO_SEARCH);
+  /** Whether the book frame is landscape and wide enough for two pages (the paginator decides the same for text). */
+  const [frameFitsSpread, setFrameFitsSpread] = useState(false);
+  /** Stops reading the book's text for search when the book is closed. */
+  const searchAbort = useRef(new AbortController());
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   /** Where to go once the next spine document reports `ready`. */
@@ -43,6 +56,8 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
   const lastWheel = useRef(0);
   /** Fixed layout: the zoom the reader chose, carried over to the pages that follow. */
   const fixedZoom = useRef({ zoom: 1, panX: 0.5 });
+  /** Whether Space, pressed while the app had the focus, holds the hand tool on a zoomed page. */
+  const handHeld = useRef(false);
   const saveTimer = useRef<number | undefined>(undefined);
   const pendingSave = useRef<Progress | null>(null);
   const origin = platform.bookOrigin(bookId);
@@ -79,10 +94,30 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
     if (progress) saveProgress(platform, bookId, progress).catch((e: unknown) => console.error('Saving reading position failed:', e));
   }, [platform, bookId]);
 
-  const frameSettings = useMemo<FrameSettings | null>(
-    () => (manifest ? { ...settings, layout: manifest.layout } : null),
-    [settings, manifest],
+  /** A PDF or DjVu spread shows two pages (paired as spread.ts says): the page document of the first shows the second beside it. */
+  const pageSpread = hasPageSpreads(manifest) && settings.spread && frameFitsSpread;
+  const coverAlone = settings.spreadCover;
+  /** The page whose document shows page `index`: the first of its spread. */
+  const shownBy = useCallback((index: number) => (pageSpread ? spreadStart(index, coverAlone) : index), [pageSpread, coverAlone]);
+  /** The last page shown, which counts as read. */
+  const lastShown = useCallback(
+    (index: number) => (pageSpread && manifest ? spreadEnd(index, manifest.spine.length, coverAlone) : index),
+    [pageSpread, manifest, coverAlone],
   );
+  const fixedSpread: FixedSpread | null = pageSpread ? (coverAlone && spineIndex === 0 ? 'single' : 'pair') : null;
+
+  const frameSettings = useMemo<FrameSettings | null>(
+    () => (manifest ? { ...settings, layout: manifest.layout, fixedSpread } : null),
+    [settings, manifest, fixedSpread],
+  );
+
+  useEffect(() => {
+    const frame = iframeRef.current;
+    if (!frame) return;
+    const observer = new ResizeObserver(() => setFrameFitsSpread(spreadFits(frame.clientWidth, frame.clientHeight)));
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [manifest]);
 
   const post = useCallback(
     (message: HostMessage) => {
@@ -94,6 +129,11 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
   const navigate = useCallback(
     (index: number, target: GotoTarget) => {
       if (!manifest || index < 0 || index >= manifest.spine.length) return;
+      const start = shownBy(index);
+      if (start !== index) {
+        if (target.kind === 'search') target = { ...target, part: index - start };
+        index = start;
+      }
       if (index === spineIndex) {
         post({ tag: MESSAGE_TAG, type: 'goto', target });
       } else {
@@ -102,8 +142,13 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
         setSpineIndex(index);
       }
     },
-    [manifest, spineIndex, post],
+    [manifest, spineIndex, shownBy, post],
   );
+
+  // Turning a spread on (or the window to landscape, or the cover alone) shows the current page in its spread.
+  useEffect(() => {
+    if (shownBy(spineIndex) !== spineIndex) navigate(spineIndex, { kind: 'fraction', value: 0 });
+  }, [spineIndex, shownBy, navigate]);
 
   const navigateHref = useCallback(
     (href: string) => {
@@ -135,7 +180,7 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
         else setChromeVisible((v) => !v);
       } else if (key === 'ArrowRight') visualTurn(1);
       else if (key === 'ArrowLeft') visualTurn(-1);
-      else if (key === 'PageDown' || key === 'ArrowDown' || key === ' ') turn(1);
+      else if (key === 'PageDown' || key === 'ArrowDown') turn(1);
       else if (key === 'PageUp' || key === 'ArrowUp') turn(-1);
       else if (key === 'Home') navigate(0, { kind: 'fraction', value: 0 });
       else if (key === 'End' && manifest) navigate(manifest.spine.length - 1, { kind: 'end' });
@@ -161,14 +206,16 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
           pendingSave.current = {
             spineIndex,
             fraction: message.fraction,
-            overall: overallProgress(manifest, spineIndex, message.fraction),
+            overall: overallProgress(manifest, lastShown(spineIndex), message.fraction),
             updatedAt: Date.now(),
           };
           window.clearTimeout(saveTimer.current);
           saveTimer.current = window.setTimeout(flushSave, 400);
           break;
         case 'edge':
-          navigate(spineIndex + message.dir, message.dir === 1 ? { kind: 'fraction', value: 0 } : { kind: 'end' });
+          // Past the last page shown, or before the first (whose spread `navigate` finds).
+          if (message.dir === 1) navigate(lastShown(spineIndex) + 1, { kind: 'fraction', value: 0 });
+          else navigate(spineIndex - 1, { kind: 'end' });
           break;
         case 'tap':
           if (panel) setPanel(null);
@@ -209,7 +256,7 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [origin, manifest, settings, onSettingsChange, frameSettings, post, platform, spineIndex, navigate, navigateHref, panel, visualTurn, turn, handleKey, flushSave]);
+  }, [origin, manifest, settings, onSettingsChange, frameSettings, post, platform, spineIndex, lastShown, navigate, navigateHref, panel, visualTurn, turn, handleKey, flushSave]);
 
   // Push settings changes to the current document.
   useEffect(() => {
@@ -220,14 +267,88 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
-      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', ' ', 'Home', 'End', 'Escape'].includes(event.key)) {
+      // Space never turns pages: on a zoomed fixed page it holds the hand tool (paginator.ts).
+      if (event.key === ' ') {
+        event.preventDefault();
+        if (manifest?.layout === 'pre-paginated' && fixedZoom.current.zoom > 1 && !handHeld.current) {
+          post({ tag: MESSAGE_TAG, type: 'hand', on: true });
+          handHeld.current = true;
+        }
+        return;
+      }
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', 'Escape'].includes(event.key)) {
         event.preventDefault();
         handleKey(event.key);
       }
     };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key !== ' ' || !handHeld.current) return;
+      event.preventDefault();
+      handHeld.current = false;
+      post({ tag: MESSAGE_TAG, type: 'hand', on: false });
+    };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleKey]);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [handleKey, manifest, post]);
+
+  useEffect(() => {
+    // Created here, not at first render: React's StrictMode unmounts and remounts once in development.
+    const controller = new AbortController();
+    searchAbort.current = controller;
+    return () => controller.abort();
+  }, []);
+
+  // Search inside the book: once typing pauses, reads the book's text (only for the first search) and finds matches.
+  const query = search.query;
+  useEffect(() => {
+    if (!manifest || !isSearchable(manifest)) return;
+    if (query.trim().length < MIN_QUERY_LENGTH) {
+      setSearch((s) => ({ ...s, hits: [], hitsQuery: '', error: null, current: null }));
+      return;
+    }
+    let stale = false;
+    const timer = window.setTimeout(() => {
+      bookTexts(platform, manifest, (progress) => setSearch((s) => ({ ...s, progress })), searchAbort.current.signal)
+        .then((texts) => {
+          if (!stale) setSearch((s) => ({ ...s, hits: findInTexts(texts, query), hitsQuery: query, progress: null, error: null, current: null }));
+        })
+        .catch((e: unknown) => {
+          if (!stale && !searchAbort.current.signal.aborted) {
+            setSearch((s) => ({ ...s, progress: null, error: `The book could not be searched: ${e instanceof Error ? e.message : String(e)}` }));
+          }
+        });
+    }, SEARCH_DELAY_MS);
+    return () => {
+      stale = true;
+      window.clearTimeout(timer);
+    };
+  }, [platform, manifest, query]);
+
+  /** Each spine document's chapter (its own or the last one before it), or its page for PDF. */
+  const sectionLabels = useMemo(() => {
+    if (!manifest) return [];
+    if (manifest.format === 'pdf') return manifest.spine.map((_, i) => `Page ${i + 1}`);
+    let last = manifest.title;
+    return manifest.spine.map((item) => (last = findTocLabel(manifest.toc, item.href) ?? last));
+  }, [manifest]);
+
+  const goToHit = (index: number) => {
+    const hit = search.hits[index];
+    if (!hit) return;
+    setSearch((s) => ({ ...s, current: index }));
+    setPanel(null);
+    navigate(hit.spineIndex, { kind: 'search', query: search.hitsQuery, occurrence: hit.occurrence });
+  };
+
+  const closeSearch = () => {
+    post({ tag: MESSAGE_TAG, type: 'clearSearch' });
+    setSearch(NO_SEARCH);
+    if (panel === 'search') setPanel(null);
+  };
 
   // Closing the book must not lose a position change that is still waiting for the debounce.
   useEffect(
@@ -240,9 +361,12 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
 
   if (!manifest) return <div className="reader reader-loading">Opening…</div>;
 
-  const overall = overallProgress(manifest, spineIndex, location.fraction);
-  const chapterTitle = findTocLabel(manifest.toc, manifest.spine[spineIndex].href) ?? manifest.title;
+  const overall = overallProgress(manifest, lastShown(spineIndex), location.fraction);
+  const chapterTitle = findTocLabel(manifest.toc, manifest.spine[spineIndex].href);
   const showPageNumbers = settings.flow === 'paginated' && manifest.layout === 'reflowable';
+  const percent = Math.round(overall * 100);
+  const spineCount = manifest.spine.length;
+  const marks = spineCount > 1 && spineCount <= MAX_SLIDER_MARKS ? Array.from({ length: spineCount - 1 }, (_, i) => (i + 1) / spineCount) : [];
 
   return (
     <div className={chromeVisible ? 'reader' : 'reader reader-immersive'} data-theme={settings.theme}>
@@ -255,50 +379,99 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
         allow="fullscreen; autoplay"
       />
 
-      {chromeVisible && (
+      {chromeVisible ? (
         <>
           <header className="reader-bar reader-top">
-            <button type="button" className="icon-button" onClick={onClose} aria-label="Back to library">
-              ←
-            </button>
-            <span className="reader-title">{manifest.title}</span>
-            <button type="button" className="icon-button" onClick={() => setPanel(panel === 'toc' ? null : 'toc')} aria-label="Contents">
-              ☰
-            </button>
-            <button type="button" className="icon-button" onClick={() => setPanel(panel === 'settings' ? null : 'settings')} aria-label="Display settings">
-              Aa
-            </button>
+            <div className="reader-toolbar">
+              <button type="button" className="icon-button" onClick={onClose} aria-label="Back to library">
+                <Icon name="back" />
+              </button>
+              <span className="reader-toolbar-space" />
+              {isSearchable(manifest) && (
+                <button type="button" className="icon-button" onClick={() => setPanel(panel === 'search' ? null : 'search')} aria-label="Search in book" aria-expanded={panel === 'search'}>
+                  <Icon name="search" />
+                </button>
+              )}
+              <button type="button" className="icon-button" onClick={() => setPanel(panel === 'toc' ? null : 'toc')} aria-label="Contents" aria-expanded={panel === 'toc'}>
+                <Icon name="toc" />
+              </button>
+              <button type="button" className="icon-button" onClick={() => setPanel(panel === 'settings' ? null : 'settings')} aria-label="Display settings" aria-expanded={panel === 'settings'}>
+                <Icon name="settings" />
+              </button>
+            </div>
+            <div className="reader-heading">
+              <span className="reader-title">{manifest.title}</span>
+              {manifest.authors.length > 0 && <span className="reader-subtitle">{manifest.authors.join(', ')}</span>}
+              {(chapterTitle || showPageNumbers) && (
+                <span className="reader-subtitle">
+                  {chapterTitle}
+                  {chapterTitle && showPageNumbers ? ' · ' : ''}
+                  {showPageNumbers ? `p. ${location.page + 1}/${location.pageCount}` : ''}
+                </span>
+              )}
+            </div>
           </header>
 
+          {search.current !== null && panel !== 'search' && (
+            <div className="reader-searchbar" role="group" aria-label="Search results">
+              <button type="button" className="icon-button" disabled={search.current === 0} onClick={() => goToHit(search.current! - 1)} aria-label="Previous result">
+                <Icon name="chevronLeft" />
+              </button>
+              <button type="button" className="reader-searchbar-label" onClick={() => setPanel('search')} title="Show all results">
+                <span className="reader-searchbar-query">“{search.hitsQuery.trim()}”</span>
+                <span>
+                  {search.current + 1} of {search.hits.length}
+                </span>
+              </button>
+              <button type="button" className="icon-button" disabled={search.current === search.hits.length - 1} onClick={() => goToHit(search.current! + 1)} aria-label="Next result">
+                <Icon name="chevronRight" />
+              </button>
+              <button type="button" className="icon-button" onClick={closeSearch} aria-label="Close search">
+                <Icon name="close" />
+              </button>
+            </div>
+          )}
+
           <footer className="reader-bar reader-bottom">
-            <button type="button" className="icon-button" onClick={() => visualTurn(-1)} aria-label="Previous page">
-              ‹
-            </button>
-            <div className="reader-position">
-              <span className="reader-chapter">{chapterTitle}</span>
+            <div className="reader-numbers-row">
+              <button type="button" className="icon-button" onClick={() => visualTurn(-1)} aria-label="Previous page">
+                <Icon name="chevronLeft" />
+              </button>
+              <span className="reader-numbers">
+                {showPageNumbers ? `Page ${location.page + 1} of ${location.pageCount} · ` : ''}
+                {percent}%
+              </span>
+              <button type="button" className="icon-button" onClick={() => visualTurn(1)} aria-label="Next page">
+                <Icon name="chevronRight" />
+              </button>
+            </div>
+            <div className="reader-slider-wrap">
+              <div className="reader-marks" aria-hidden="true">
+                {marks.map((at) => (
+                  <span key={at} className="reader-mark" style={{ left: `${at * 100}%` }} />
+                ))}
+              </div>
               <input
                 type="range"
                 className="reader-slider"
+                style={{ '--fill': `${overall * 100}%` } as CSSProperties}
                 min={0}
                 max={1000}
                 value={Math.round(overall * 1000)}
                 onChange={(e) => {
-                  const position = (Number(e.target.value) / 1000) * manifest.spine.length;
-                  const index = Math.min(manifest.spine.length - 1, Math.floor(position));
+                  const position = (Number(e.target.value) / 1000) * spineCount;
+                  const index = Math.min(spineCount - 1, Math.floor(position));
                   navigate(index, { kind: 'fraction', value: position - index });
                 }}
                 aria-label="Position in book"
               />
-              <span className="reader-numbers">
-                {showPageNumbers ? `Page ${location.page + 1} of ${location.pageCount} · ` : ''}
-                {Math.round(overall * 100)}%
-              </span>
             </div>
-            <button type="button" className="icon-button" onClick={() => visualTurn(1)} aria-label="Next page">
-              ›
-            </button>
           </footer>
         </>
+      ) : (
+        <div className="reader-folio" aria-hidden="true">
+          {showPageNumbers ? `${location.page + 1} / ${location.pageCount}` : `${percent}%`}
+        </div>
       )}
 
       {panel === 'toc' && (
@@ -312,8 +485,23 @@ export function ReaderView({ platform, bookId, settings, onSettingsChange, onClo
           onClose={() => setPanel(null)}
         />
       )}
+      {panel === 'search' && (
+        <SearchPanel
+          search={search}
+          sectionLabel={(i) => sectionLabels[i] ?? ''}
+          onQueryChange={(text) => setSearch((s) => ({ ...s, query: text }))}
+          onSelect={goToHit}
+          onClose={() => setPanel(null)}
+        />
+      )}
       {panel === 'settings' && (
-        <SettingsPanel settings={settings} fixedLayout={manifest.layout === 'pre-paginated'} onChange={onSettingsChange} onClose={() => setPanel(null)} />
+        <SettingsPanel
+          settings={settings}
+          fixedLayout={manifest.layout === 'pre-paginated'}
+          canSpread={manifest.layout === 'reflowable' || hasPageSpreads(manifest)}
+          onChange={onSettingsChange}
+          onClose={() => setPanel(null)}
+        />
       )}
     </div>
   );

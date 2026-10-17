@@ -1,156 +1,754 @@
+/* Both layouts, and the header they share, sit on the page in the app's colors. */
 .library {
+  --shelf-bg: var(--bg);
+  --shelf-text: var(--text);
+  --shelf-muted: var(--text-muted);
+  --shelf-pill: var(--surface);
+  --shelf-pill-active: color-mix(in srgb, var(--highlight) 24%, var(--surface));
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--shelf-bg);
+  color: var(--shelf-text);
+}
+
+.library-content {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: calc(1rem + var(--safe-top)) calc(1.25rem + var(--safe-right)) calc(2rem + var(--safe-bottom)) calc(1.25rem + var(--safe-left));
-}
-
-.library-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  max-width: 72rem;
-  margin: 0 auto 1.5rem;
-}
-
-.library-header h1 {
-  margin: 0;
-  font-size: 1.6rem;
-}
-
-.library-actions {
-  display: flex;
-  gap: 0.5rem;
+  padding: 0.5rem calc(0.5rem + var(--safe-right)) calc(1.5rem + var(--safe-bottom)) calc(0.5rem + var(--safe-left));
 }
 
 .library-empty {
+  max-width: 28rem;
+  margin: 16vh auto 0;
+  padding: 0 1rem;
   text-align: center;
-  margin-top: 20vh;
   color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.library-empty-icon {
+  width: 4rem;
+  height: 4rem;
+  margin: 0 auto 0.5rem;
+  opacity: 0.5;
 }
 
 .library-hint {
   font-size: 0.9rem;
+  margin-bottom: 1.5rem;
 }
 
-.library-grid {
+.filter-bar {
+  max-width: 90rem;
+  margin: 0 auto 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.1rem 0.25rem 0.1rem 1rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* --- Card layout (ReadEra) --- */
+
+.card-list {
   list-style: none;
   margin: 0 auto;
   padding: 0;
-  max-width: 72rem;
+  max-width: 90rem;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
-  gap: 1.5rem 1.25rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr));
+  gap: 0.6rem;
 }
 
 .book-card {
-  display: flex;
-  flex-direction: column;
+  --cover-width: 7.8rem;
+  position: relative;
   min-width: 0;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
 }
 
 .book-open {
   appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 0.75rem;
   border: none;
+  border-radius: inherit;
   background: none;
-  padding: 0;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.book-card:not(.shelf-tile, .book-importing) .book-open:hover {
+  background: var(--surface-hover);
+}
+
+/* Whole covers in their own proportions, top-aligned in a 2:3 space (wide magazine covers are not cropped). */
+.book-cover {
+  flex: none;
+  width: var(--cover-width);
+  aspect-ratio: 2 / 3;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.book-cover .cover-img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 2px;
+}
+
+.book-text {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-}
-
-.book-cover {
-  position: relative;
-  aspect-ratio: 2 / 3;
-  border-radius: 6px;
-  overflow: hidden;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
-  transition: transform 0.15s ease;
-}
-
-.book-open:hover .book-cover {
-  transform: translateY(-2px);
-}
-
-.book-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.book-cover-placeholder {
-  position: absolute;
-  inset: 0;
-  padding: 1rem;
-  display: grid;
-  place-items: center;
-  text-align: center;
-  font-family: Georgia, serif;
-  font-size: 1rem;
-  line-height: 1.3;
-  color: var(--text-muted);
-}
-
-.book-format {
-  position: absolute;
-  top: 0.4rem;
-  right: 0.4rem;
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 0.15rem 0.35rem;
-  border-radius: 4px;
-  background: rgb(0 0 0 / 0.55);
-  color: #fff;
+  gap: 0.25rem;
+  /* Room for the progress line and toggles, which sit over the bottom of this column. */
+  padding-bottom: 4.5rem;
 }
 
 .book-title {
-  font-weight: 600;
+  font-size: 1.15rem;
   line-height: 1.3;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
-.book-author {
-  font-size: 0.85rem;
+.book-author,
+.book-meta {
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.book-footer {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin-top: 0.2rem;
+.book-meta {
+  font-size: 0.9rem;
 }
 
+.book-card-bottom {
+  position: absolute;
+  left: calc(1.75rem + var(--cover-width));
+  right: 0.5rem;
+  bottom: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  pointer-events: none;
+}
+
+.book-card-bottom > * {
+  pointer-events: auto;
+}
+
+/* A thin line with a dot at each end, like ReadEra's position marker. */
 .book-progress {
-  flex: 1;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--border);
-  overflow: hidden;
+  position: relative;
+  height: 2px;
+  margin: 0 0.4rem;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+}
+
+.book-progress::before,
+.book-progress::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 40%, transparent);
+}
+
+.book-progress::before {
+  left: -3px;
+}
+
+.book-progress::after {
+  right: -3px;
 }
 
 .book-progress-fill {
   height: 100%;
-  background: var(--accent);
+  background: var(--highlight);
 }
 
-.book-footer .icon-button {
+.book-actions {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+}
+
+.toggle[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+@media (max-width: 26rem) {
+  .book-card {
+    --cover-width: 6.3rem;
+  }
+
+  .book-actions .icon-button {
+    min-width: 2.4rem;
+  }
+}
+
+/* --- Author, collection and format lists --- */
+
+.group-list {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 52rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.group-row {
+  appearance: none;
+  width: 100%;
+  min-height: 4rem;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0 1.25rem;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  color: inherit;
+  font: inherit;
+  font-size: 1.1rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.group-row:hover {
+  background: var(--surface-hover);
+}
+
+.group-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.group-count {
+  color: var(--text-muted);
+  font-size: 1rem;
+}
+
+/* --- Formats: a checklist of every format --- */
+
+.list-hint {
+  max-width: 52rem;
+  margin: 0.25rem auto 0.75rem;
+  padding: 0 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.format-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.format-item .group-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.format-item .group-row:disabled {
+  cursor: default;
+}
+
+.format-show {
+  color: var(--text-muted);
+}
+
+.checkbox {
+  flex: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--text-muted);
+  border-radius: 3px;
+}
+
+.checkbox-on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.checkbox .icon {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+/* --- Folders: book files listed after the subfolders --- */
+
+.file-format {
+  flex: none;
+  min-width: 3.2rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--highlight) 22%, transparent);
+  color: var(--highlight);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-align: center;
+}
+
+.file-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0;
+}
+
+.file-meta {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.shelf-subtitle {
+  max-width: 72rem;
+  margin: -1rem auto 1rem;
+  color: var(--shelf-muted);
+  overflow-wrap: anywhere;
+}
+
+/* --- Navigation drawer --- */
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  z-index: 30;
+}
+
+.drawer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(20rem, 85vw);
+  overflow-y: auto;
+  padding: var(--safe-top) 0 var(--safe-bottom) var(--safe-left);
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  animation: drawer-in 0.18s ease-out;
+}
+
+.app[data-ui='light'] .drawer {
+  background: var(--surface);
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.1rem 1.25rem;
+  font-size: 1.2rem;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+}
+
+.drawer-logo {
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 0.6rem;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--bar) 75%, white), var(--bar));
+  color: var(--accent-on-dark);
+}
+
+.drawer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem 0;
+}
+
+.drawer-list-footer {
+  border-top: 1px solid var(--border);
+}
+
+.drawer-item {
+  appearance: none;
+  width: 100%;
+  min-height: 3.4rem;
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  padding: 0 1.4rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.drawer-item .icon {
+  color: color-mix(in srgb, var(--text) 75%, transparent);
+}
+
+.drawer-item:hover {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+.drawer-item[aria-current='page'],
+.drawer-item[aria-current='page'] .icon {
+  color: var(--highlight);
+}
+
+/* --- Shelf layout (plain, like the iPad Books library) --- */
+
+.shelf-header {
+  flex: none;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: calc(0.5rem + var(--safe-top)) calc(0.5rem + var(--safe-right)) 0.5rem calc(0.5rem + var(--safe-left));
+  color: var(--shelf-muted);
+}
+
+.library[data-layout='cards'] .shelf-title {
+  max-width: 90rem;
+  margin: 0.5rem auto 0.75rem;
+  padding: 0 0.25rem;
+  font-size: 1.4rem;
+}
+
+.library[data-layout='cards'] .shelf-subtitle {
+  max-width: 90rem;
+  margin: -0.5rem auto 0.75rem;
+  padding: 0 0.25rem;
+}
+
+.shelf-header-center {
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.pill-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  max-width: 100%;
+  padding: 0.2rem;
+  border-radius: 999px;
+  background: var(--shelf-pill);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.pill-tab {
+  appearance: none;
+  padding: 0.45rem 1.1rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--shelf-muted);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pill-tab[aria-current='page'] {
+  background: var(--shelf-pill-active);
+  color: var(--shelf-text);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
+}
+
+.pill-tabs .icon-button {
+  min-width: 2.3rem;
+  min-height: 2.3rem;
+}
+
+.pill-tabs .icon {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+
+@media (max-width: 30rem) {
+  .shelf-header {
+    gap: 0.25rem;
+    padding-left: calc(0.25rem + var(--safe-left));
+    padding-right: calc(0.25rem + var(--safe-right));
+  }
+
+  .shelf-header > .icon-button {
+    min-width: 2.25rem;
+  }
+
+  .pill-tab {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.82rem;
+  }
+
+  .pill-tabs .icon-button {
+    min-width: 2rem;
+    min-height: 2rem;
+  }
+}
+
+.shelf-search {
+  width: min(28rem, 100%);
+  padding: 0.55rem 1.1rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--shelf-pill);
+  color: var(--shelf-text);
+  font: inherit;
+  outline: none;
+}
+
+.shelf-search::placeholder {
+  color: var(--shelf-muted);
+}
+
+.library[data-layout='shelf'] .library-content {
+  padding: 1rem calc(1.5rem + var(--safe-right)) calc(2rem + var(--safe-bottom)) calc(1.5rem + var(--safe-left));
+}
+
+.library[data-layout='shelf'] .library-empty {
+  color: var(--shelf-muted);
+}
+
+.library[data-layout='shelf'] .filter-bar {
+  max-width: 72rem;
+  background: var(--shelf-pill);
+  color: var(--shelf-muted);
+}
+
+.library[data-layout='shelf'] .group-row {
+  background: var(--shelf-pill);
+  box-shadow: none;
+}
+
+.library[data-layout='shelf'] .group-count {
+  color: var(--shelf-muted);
+}
+
+.shelf-title {
+  max-width: 72rem;
+  margin: 0.25rem auto 1.25rem;
+  font-size: 1.9rem;
+  font-weight: 700;
+}
+
+.shelf-grid {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 72rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 2.25rem 2rem;
+}
+
+@media (max-width: 30rem) {
+  .shelf-grid {
+    grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+    gap: 1.5rem 1.1rem;
+  }
+}
+
+.shelf-tile {
+  display: flex;
+  flex-direction: column;
+  background: none;
+  box-shadow: none;
+}
+
+.shelf-tile .book-open {
+  display: block;
+  padding: 0;
+}
+
+/* Covers keep their own proportions and stand on a common baseline, as on a shelf. */
+.tile-cover {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  aspect-ratio: 2 / 3;
+  transition: transform 0.15s ease;
+}
+
+.shelf-tile:not(.book-importing) .book-open:hover .tile-cover {
+  transform: translateY(-3px);
+}
+
+.tile-cover .cover-img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 2px;
+  box-shadow:
+    0 1px 3px rgb(0 0 0 / 0.2),
+    0 8px 20px rgb(0 0 0 / 0.14);
+}
+
+.tile-cover .cover-placeholder {
+  border-radius: 2px;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.14);
+}
+
+.tile-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 2rem;
+  margin-top: 0.35rem;
+}
+
+.tile-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
   font-size: 0.8rem;
+  color: var(--shelf-muted);
+}
+
+.tile-check {
+  width: 1rem;
+  height: 1rem;
+}
+
+.tile-badge {
+  margin-left: 0.35rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: #2b5fd9;
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tile-more {
   min-width: 2rem;
   min-height: 2rem;
-  color: var(--text-muted);
+  margin-right: -0.4rem;
+  color: var(--shelf-muted);
+}
+
+/* --- Generated cover for books without one --- */
+
+.cover-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  color: #ffffff;
+  text-align: center;
+  font-family: Georgia, 'Times New Roman', serif;
+  overflow: hidden;
+}
+
+.cover-placeholder-title {
+  font-size: 0.95rem;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+.book-cover .cover-placeholder {
+  padding: 0.5rem;
+  border-radius: 2px;
+}
+
+.book-cover .cover-placeholder-title {
+  font-size: 0.8rem;
+}
+
+.cover-placeholder-author {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+/* --- A book being imported, or whose cover is still being drawn --- */
+
+.book-importing .book-open {
+  cursor: default;
+}
+
+.cover-drawing {
+  position: relative;
+}
+
+.cover-drawing::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 35%, rgb(255 255 255 / 0.2) 50%, transparent 65%) no-repeat;
+  background-size: 300% 100%;
+  animation: cover-shimmer 1.6s linear infinite;
+}
+
+@keyframes cover-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cover-drawing::after {
+    animation: none;
+    background: rgb(255 255 255 / 0.12);
+  }
 }

@@ -1,3 +1,5 @@
+import type { FolderListing, FoundBookFile } from './platform';
+
 /** The API the Electron preload script exposes as `window.ereaderNative`. */
 export interface ElectronNativeApi {
   pickBookFile(): Promise<{ ref: string; name: string } | null>;
@@ -16,6 +18,8 @@ export interface ElectronNativeApi {
   versions(): { chrome: string; electron: string; platform: string };
   openExternal(url: string): Promise<void>;
   setColorScheme(scheme: 'light' | 'dark'): Promise<void>;
+  listFolder(path: string, extensions: string[]): Promise<FolderListing>;
+  findBookFiles(folder: string, extensions: string[]): Promise<FoundBookFile[]>;
 }
 
 export const IPC = {
@@ -33,6 +37,8 @@ export const IPC = {
   kvSet: 'ereader:kv-set',
   openExternal: 'ereader:open-external',
   setColorScheme: 'ereader:set-color-scheme',
+  listFolder: 'ereader:list-folder',
+  findBookFiles: 'ereader:find-book-files',
 } as const;
 
 export const BOOK_SCHEME = 'book';

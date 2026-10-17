@@ -1,7 +1,8 @@
 // End-to-end check of the desktop app: run `npm run build && node scripts/make-sample-books.mjs` first.
 // Usage: node test/e2e/desktop.e2e.mjs [screenshot-dir]
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
+import { copyFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from 'playwright';
@@ -53,14 +54,25 @@ function touch([from, to]) {
 }
 
 const results = [];
+// On GitHub Actions a failure is also an annotation, which the API shows without signing in (job logs need it).
+const annotate = (message) =>
+  process.env.GITHUB_ACTIONS && console.log(`::error title=End-to-end (${process.platform})::${message.replace(/%/g, '%25').replace(/\r?\n/g, '%0A')}`);
 const check = (name, fn) => {
   try {
     fn();
     results.push(`PASS ${name}`);
   } catch (error) {
     results.push(`FAIL ${name}: ${error.message}`);
+    annotate(`${name}: ${error.message}`);
   }
 };
+// A step that throws outside check() ends the run: report it after what passed so far.
+process.on('uncaughtException', (error) => {
+  console.log(results.join('\n'));
+  console.log(`FAIL stopped after "${results.at(-1) ?? 'start'}": ${error.stack ?? error}`);
+  annotate(`stopped after "${results.at(-1) ?? 'start'}": ${error.message ?? error}`);
+  process.exit(1);
+});
 
 // --- Modern web EPUB: scripts, modern CSS, pagination, TOC navigation, progress -----------------
 {
@@ -76,6 +88,8 @@ const check = (name, fn) => {
     for (const [name, ok] of Object.entries(features)) assert.ok(ok, name);
   });
 
+  // Under xvfb the window can still be unsized here, which makes the frame 0 px wide.
+  await frame.waitForFunction(() => innerWidth > 0);
   const layout = await frame.evaluate(() => ({
     classes: document.documentElement.className,
     pages: Math.round(document.scrollingElement.scrollWidth / innerWidth),
@@ -117,6 +131,34 @@ const check = (name, fn) => {
   const zoomedOut = await fontScale();
   check('Ctrl+wheel changes the font size', () => assert.deepEqual([zoomedIn, zoomedOut], ['1.1', '1']));
 
+  const highlight = (f) =>
+    f.evaluate(() => {
+      const ranges = [...(CSS.highlights.get('ereader-search') ?? [])];
+      const rect = ranges[0]?.getBoundingClientRect();
+      return { count: ranges.length, text: ranges[0]?.toString() ?? '', left: rect?.left ?? -1, width: innerWidth };
+    });
+  await page.getByRole('button', { name: 'Search in book' }).click();
+  await page.getByRole('searchbox', { name: 'Search in book' }).fill('pagination');
+  await page.locator('.search-hit').nth(8).waitFor();
+  const hitCount = await page.locator('.search-hit').count();
+  await page.locator('.search-hit').nth(8).click();
+  await page.waitForTimeout(500);
+  const match = await highlight(frame);
+  const matchPage = await page.locator('.reader-numbers').textContent();
+  const searchBar = await page.locator('.reader-searchbar').textContent();
+  check('search lists matches, then shows the chosen one highlighted on its page', () => {
+    assert.ok(hitCount > 8, String(hitCount));
+    assert.deepEqual([match.count, match.text], [1, 'pagination']);
+    assert.ok(match.left >= 0 && match.left < match.width, JSON.stringify(match));
+    assert.doesNotMatch(matchPage, /^Page 1 of/);
+    assert.match(searchBar, new RegExp(`9 of ${hitCount}`));
+  });
+  await page.screenshot({ path: path.join(shots, '2b-search.png') });
+  await page.getByRole('button', { name: 'Close search' }).click();
+  await page.waitForTimeout(200);
+  const afterClose = await highlight(frame);
+  check('closing the search removes the highlight', () => assert.equal(afterClose.count, 0));
+
   await page.getByRole('button', { name: 'Contents' }).click();
   await page.getByRole('button', { name: 'Interactive chapter' }).click();
   const frame2 = await bookFrame(page, 'interactive.xhtml');
@@ -143,6 +185,38 @@ const check = (name, fn) => {
   });
   await page.screenshot({ path: path.join(shots, '4-dark-settings.png') });
   await page.getByRole('button', { name: 'Light' }).click();
+
+  const weight = page.getByRole('slider', { name: 'Font weight' });
+  const strokeWidth = () => frame2.evaluate(() => getComputedStyle(document.querySelector('p')).webkitTextStrokeWidth);
+  await weight.fill('3');
+  await page.waitForTimeout(300);
+  const heavier = await strokeWidth();
+  await weight.fill('0');
+  await page.waitForTimeout(300);
+  const normal = await strokeWidth();
+  check('font weight thickens the text, and 0 leaves it as published', () => {
+    assert.ok(Number.parseFloat(heavier) > 0, heavier);
+    assert.equal(normal, '0px');
+  });
+
+  // The window is landscape (1000×760), so the setting shows two pages side by side.
+  const twoPages = page.getByRole('switch', { name: /Two pages in landscape/ });
+  await twoPages.click();
+  await page.waitForTimeout(500);
+  const spread = await frame2.evaluate(() => ({
+    columns: getComputedStyle(document.documentElement).columnCount,
+    paragraph: document.querySelector('p').getBoundingClientRect().width,
+    half: innerWidth / 2,
+  }));
+  await page.screenshot({ path: path.join(shots, '4b-two-pages.png') });
+  await twoPages.click();
+  await page.waitForTimeout(500);
+  const single = await frame2.evaluate(() => getComputedStyle(document.documentElement).columnCount);
+  check('two pages side by side in landscape, one page when turned off', () => {
+    assert.equal(spread.columns, '2');
+    assert.ok(spread.paragraph < spread.half, JSON.stringify(spread));
+    assert.equal(single, 'auto');
+  });
   await page.waitForTimeout(600); // let the debounced progress save land
   await app.close();
 }
@@ -316,6 +390,39 @@ async function frameWithText(page, text) {
   const third = await pixel('0003.html');
   check('DjVu outline navigates', () => assert.ok(near(third.color, [40, 70, 200]), JSON.stringify(third.color)));
 
+  // The window is landscape, so two pages show pages 1–2 side by side, then page 3 alone.
+  const twoPages = async () => {
+    await page.getByRole('button', { name: 'Display settings' }).click();
+    await page.getByRole('switch', { name: /Two pages in landscape/ }).click();
+    await page.getByRole('button', { name: 'Close settings' }).click();
+  };
+  await twoPages();
+  await page.keyboard.press('Home');
+  const djvuSpreadFrame = await bookFrame(page, '0001.html');
+  await djvuSpreadFrame.waitForFunction(() => document.querySelector('[data-ereader-part="1"] canvas')?.width > 1, null, { timeout: 15000 });
+  const djvuSpread = await djvuSpreadFrame.evaluate(() => {
+    const sheets = [...document.querySelectorAll('.djvu-sheet')];
+    const color = (sheet) => [...sheet.querySelector('canvas').getContext('2d').getImageData(2, 2, 1, 1).data.slice(0, 3)];
+    return {
+      colors: sheets.map(color),
+      left: sheets.map((sheet) => sheet.getBoundingClientRect().left),
+      width: document.documentElement.getBoundingClientRect().width,
+      screen: innerWidth,
+    };
+  });
+  await page.screenshot({ path: path.join(shots, '11b-djvu-two-pages.png') });
+  check('DjVu two-page view shows the next page beside the first, fitted to the window', () => {
+    assert.ok(near(djvuSpread.colors[0], [200, 40, 40]) && near(djvuSpread.colors[1], [40, 160, 60]), JSON.stringify(djvuSpread.colors));
+    assert.ok(djvuSpread.left[1] > djvuSpread.left[0], JSON.stringify(djvuSpread.left));
+    assert.ok(djvuSpread.width <= djvuSpread.screen + 1, JSON.stringify(djvuSpread));
+  });
+  await page.getByRole('button', { name: 'Next page' }).click();
+  const djvuLast = await bookFrame(page, '0003.html');
+  await djvuLast.waitForFunction(() => document.documentElement.dataset.djvuDecoder, null, { timeout: 15000 });
+  const djvuLastSheets = await djvuLast.evaluate(() => document.querySelectorAll('.djvu-sheet').length);
+  check('DjVu two-page view turns two pages at a time, the last page alone', () => assert.equal(djvuLastSheets, 1));
+  await twoPages();
+
   await page.getByRole('button', { name: 'Back to library' }).click();
   const cover = page.locator('.book-open[title="sample"] img');
   await cover.waitFor();
@@ -345,6 +452,12 @@ async function frameWithText(page, text) {
   });
   const title = await page.locator('.reader-title').textContent();
   check('PDF title from metadata', () => assert.equal(title, 'PDF Sample'));
+  await page.keyboard.press(' ');
+  await first.frame.focus('body');
+  await page.keyboard.press(' ');
+  await page.waitForTimeout(500);
+  const afterSpace = page.frames().filter((f) => f.url().startsWith('book://')).map((f) => f.url().split('/').pop());
+  check('Space does not turn the page, from the app or the page', () => assert.deepEqual(afterSpace, ['0001.html']));
   await page.screenshot({ path: path.join(shots, '13-pdf.png') });
   const links = await first.frame.evaluate(() => [...document.querySelectorAll('.pdf-links a')].map((a) => a.getAttribute('href')));
   check('PDF link annotations become links', () => assert.deepEqual(links.sort(), ['0003.html', 'https://example.com/']));
@@ -381,6 +494,23 @@ async function frameWithText(page, text) {
     assert.match(second.frame.url(), /0002\.html$/);
     assert.ok(panned.y < zoomed.y, `${zoomed.y} -> ${panned.y}`);
   });
+  const cursor = () => second.frame.evaluate(() => getComputedStyle(document.body).cursor);
+  await page.keyboard.down(' ');
+  await page.waitForTimeout(200);
+  const handCursor = await cursor();
+  await page.mouse.down();
+  await page.mouse.move(450, 460, { steps: 5 });
+  const grabbingCursor = await cursor();
+  await page.mouse.up();
+  await page.keyboard.up(' ');
+  await page.waitForTimeout(200);
+  const dragged = await view(second.frame);
+  const releasedCursor = await cursor();
+  check('holding Space shows a hand that drags the zoomed page, without turning it', () => {
+    assert.deepEqual([handCursor, grabbingCursor, releasedCursor], ['grab', 'grabbing', 'auto']);
+    assert.ok(dragged.y > panned.y + 50, `${panned.y} -> ${dragged.y}`);
+    assert.match(second.frame.url(), /0002\.html$/);
+  });
   for (let i = 0; i < 40; i++) await page.mouse.wheel(0, 400);
   await page.waitForTimeout(600);
   await page.mouse.wheel(0, 100);
@@ -403,11 +533,109 @@ async function frameWithText(page, text) {
   await page.waitForTimeout(400);
   const fitted = await view(backPage.frame);
   check('Ctrl+wheel zooms back out to the whole page', () => assert.equal(fitted.zoom, 1));
+
+  await page.getByRole('button', { name: 'Search in book' }).click();
+  await page.getByRole('searchbox', { name: 'Search in book' }).fill('page three');
+  await page.locator('.search-hit').nth(1).waitFor();
+  const pdfSections = await page.locator('.search-section').allTextContents();
+  await page.locator('.search-hit').nth(1).click();
+  const pageThree = await render('0003.html');
+  await pageThree.frame.waitForFunction(() => CSS.highlights.get('ereader-search')?.size === 1, null, { timeout: 15000 });
+  const pdfMatch = await pageThree.frame.evaluate(() => [...CSS.highlights.get('ereader-search')][0].toString());
+  check('PDF search finds text on its pages and highlights it in the text layer', () => {
+    assert.deepEqual(pdfSections, ['Page 1', 'Page 3']);
+    assert.equal(pdfMatch, 'Page Three');
+  });
+  await page.getByRole('button', { name: 'Close search' }).click();
+
+  // The window is landscape, so the setting shows pages 1–2 side by side, then page 3 alone.
+  const twoPages = async () => {
+    await page.getByRole('button', { name: 'Display settings' }).click();
+    await page.getByRole('switch', { name: /Two pages in landscape/ }).click();
+    await page.getByRole('button', { name: 'Close settings' }).click();
+  };
+  await twoPages();
+  await page.keyboard.press('Home');
+  const spreadFrame = await bookFrame(page, '0001.html');
+  await spreadFrame.waitForFunction(() => document.querySelector('[data-ereader-part="1"] .textLayer')?.textContent, null, { timeout: 15000 });
+  const pdfSpread = await spreadFrame.evaluate(() => {
+    const sheets = [...document.querySelectorAll('.pdf-sheet')];
+    const color = (sheet) => [...sheet.querySelector('canvas').getContext('2d').getImageData(2, 2, 1, 1).data.slice(0, 3)];
+    return {
+      colors: sheets.map(color),
+      left: sheets.map((sheet) => sheet.getBoundingClientRect().left),
+      text: sheets[1].querySelector('.textLayer').textContent,
+      width: document.documentElement.getBoundingClientRect().width,
+      screen: innerWidth,
+    };
+  });
+  await page.screenshot({ path: path.join(shots, '13c-pdf-two-pages.png') });
+  check('PDF two-page view shows the next page beside the first, fitted to the window', () => {
+    assert.ok(near(pdfSpread.colors[0], [200, 40, 40]) && near(pdfSpread.colors[1], [40, 160, 60]), JSON.stringify(pdfSpread.colors));
+    assert.ok(pdfSpread.left[1] > pdfSpread.left[0], JSON.stringify(pdfSpread.left));
+    assert.match(pdfSpread.text, /Page Two/);
+    assert.ok(pdfSpread.width <= pdfSpread.screen + 1, JSON.stringify(pdfSpread));
+  });
+  await page.getByRole('button', { name: 'Search in book' }).click();
+  await page.getByRole('searchbox', { name: 'Search in book' }).fill('page two');
+  await page.locator('.search-hit').first().waitFor();
+  await page.locator('.search-hit').first().click();
+  await spreadFrame.waitForFunction(() => CSS.highlights.get('ereader-search')?.size === 1, null, { timeout: 15000 });
+  const spreadMatch = await spreadFrame.evaluate(() => {
+    const range = [...CSS.highlights.get('ereader-search')][0];
+    return { text: range.toString(), part: range.startContainer.parentElement.closest('[data-ereader-part]').dataset.ereaderPart };
+  });
+  check('PDF search on the second page of a spread highlights it there', () => assert.deepEqual(spreadMatch, { text: 'Page Two', part: '1' }));
+  await page.getByRole('button', { name: 'Close search' }).click();
+  await page.getByRole('button', { name: 'Next page' }).click();
+  const lastSpread = await bookFrame(page, '0003.html');
+  await lastSpread.waitForFunction(() => document.documentElement.dataset.pdfRendered);
+  const lastSheets = await lastSpread.evaluate(() => document.querySelectorAll('.pdf-sheet').length);
+  check('PDF two-page view turns two pages at a time, the last page alone', () => assert.equal(lastSheets, 1));
+
+  // Cover alone: page 1 by itself in the middle, as large as the pages of a pair, then pages 2–3.
+  const coverAlone = async () => {
+    await page.getByRole('button', { name: 'Display settings' }).click();
+    await page.getByRole('switch', { name: /Cover alone/ }).click();
+    await page.getByRole('button', { name: 'Close settings' }).click();
+  };
+  await coverAlone();
+  const pairFrame = await bookFrame(page, '0002.html');
+  await pairFrame.waitForFunction(() => document.querySelector('[data-ereader-part="1"] .textLayer')?.textContent, null, { timeout: 15000 });
+  const pair = await pairFrame.evaluate(() => ({
+    text: [...document.querySelectorAll('.textLayer')].map((layer) => layer.textContent.trim()),
+    width: document.querySelector('.pdf-sheet').getBoundingClientRect().width,
+  }));
+  await page.keyboard.press('Home');
+  const coverFrame = await bookFrame(page, '0001.html');
+  await coverFrame.waitForFunction(() => document.documentElement.dataset.pdfRendered);
+  const coverView = await coverFrame.evaluate(() => {
+    const rect = document.querySelector('.pdf-sheet').getBoundingClientRect();
+    return { sheets: document.querySelectorAll('.pdf-sheet').length, center: rect.left + rect.width / 2, width: rect.width, screenCenter: innerWidth / 2 };
+  });
+  await page.screenshot({ path: path.join(shots, '13d-pdf-cover-alone.png') });
+  check('PDF cover alone: page 1 by itself in the middle, as large as a page of a pair, then pages 2–3 together', () => {
+    assert.deepEqual(pair.text, ['Page Two', 'Page Three']);
+    assert.equal(coverView.sheets, 1);
+    assert.ok(Math.abs(coverView.center - coverView.screenCenter) < 1, JSON.stringify(coverView));
+    assert.ok(Math.abs(coverView.width - pair.width) < 1, JSON.stringify({ coverView, pair }));
+  });
+  await coverAlone();
+  await twoPages();
+
   await page.getByRole('button', { name: 'Back to library' }).click();
   const cover = page.locator('.book-open[title="PDF Sample"] img');
   await cover.waitFor();
   const coverWidth = await cover.evaluate(async (img) => (await img.decode(), img.naturalWidth));
   check('PDF cover rendered at import', () => assert.ok(coverWidth > 0));
+  await page.getByRole('button', { name: 'Show as shelf' }).click();
+  const tileStatus = await page.locator('.shelf-tile:has(.book-open[title="PDF Sample"]) .tile-status').textContent();
+  check('shelf tiles show the file format under the cover', () => assert.equal(tileStatus, 'PDF'));
+  await page.screenshot({ path: path.join(shots, '13e-shelf-formats.png') });
+  await page.getByRole('button', { name: 'Show as cards' }).click();
+  const cards = await page.locator('.card-list').count();
+  check('the top bar button switches between shelf and cards', () => assert.equal(cards, 1));
+  await page.screenshot({ path: path.join(shots, '13f-cards.png') });
   await app.close();
 }
 {
@@ -449,8 +677,144 @@ async function frameWithText(page, text) {
   await page.getByRole('button', { name: 'Back to library' }).click();
   await page.locator('.book-card').first().waitFor();
   await page.screenshot({ path: path.join(shots, '16-library-all-formats.png') });
+
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.locator('.drawer-item', { hasText: 'Series' }).click();
+  const seriesRows = await page.locator('.group-row').allTextContents();
+  await page.locator('.group-row', { hasText: 'eReaderPlus Samples' }).click();
+  const inSeries = await page.locator('.book-open').evaluateAll((els) => els.map((el) => el.getAttribute('title')));
+  check('series from EPUB 3, FB2 and ComicInfo metadata, books in series order', () => {
+    assert.deepEqual(seriesRows, ['eReaderPlus Samples2', 'Sample Comic1']);
+    assert.deepEqual(inSeries, ['Modern Web Sample', 'FictionBook Sample']);
+  });
+  await page.screenshot({ path: path.join(shots, '17-series.png') });
+
+  const titles = () => page.locator('.book-open').evaluateAll((els) => els.map((el) => el.getAttribute('title')));
+  await page.getByRole('button', { name: 'Back' }).click(); // Out of the series, back to the list of series.
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.locator('.drawer-item', { hasText: 'Formats' }).click();
+  const formatRows = await page.getByRole('checkbox').count();
+  await page.getByRole('checkbox', { name: /^EPUB,/ }).click();
+  await page.screenshot({ path: path.join(shots, '17b-formats.png') });
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.locator('.drawer-item', { hasText: 'Books' }).click();
+  await page.locator('.book-card').first().waitFor();
+  const withoutEpub = await titles();
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.locator('.drawer-item', { hasText: 'Formats' }).click();
+  await page.getByRole('checkbox', { name: 'All formats' }).click();
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.locator('.drawer-item', { hasText: 'Books' }).click();
+  await page.locator('.book-card').first().waitFor();
+  const allAgain = await titles();
+  check('Formats lists every format, and the formats ticked there apply to the shelves', () => {
+    assert.equal(formatRows, 10); // "All formats" and the nine formats.
+    assert.ok(!withoutEpub.includes('Modern Web Sample') && withoutEpub.includes('PDF Sample'), JSON.stringify(withoutEpub));
+    assert.ok(allAgain.includes('Modern Web Sample'), JSON.stringify(allAgain));
+  });
   await app.close();
 }
+
+// --- Watched folders: the in-app folder browser, then scans, on an empty library -------------------
+{
+  // The folder browser shows real paths: not C:\Users\RUNNER~1 (8.3 name) or /var (a link to /private/var on macOS).
+  const folderData = realpathSync.native(await mkdtemp(path.join(tmpdir(), 'ereader-folders-')));
+  const watched = path.join(folderData, 'Books');
+  await mkdir(path.join(watched, 'Series'), { recursive: true });
+  await copyFile(path.resolve('samples', 'modern-web.epub'), path.join(watched, 'modern-web.epub'));
+  await copyFile(path.resolve('samples', 'sample.fb2'), path.join(watched, 'Series', 'sample.fb2'));
+  await writeFile(path.join(watched, 'notes.txt'), 'Not a book.');
+  const app = await electron.launch({ args: ['.'], env: { ...process.env, EREADER_USER_DATA: path.join(folderData, 'data') }, colorScheme: null });
+  const page = await app.firstWindow();
+  page.on('console', (m) => m.type() === 'error' && results.push(`INFO [folders console] ${m.text()}`));
+  await page.setViewportSize({ width: 1000, height: 760 }).catch(() => {});
+
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.locator('.drawer-item', { hasText: 'Settings' }).click();
+  await page.getByRole('button', { name: /Add folder/ }).click();
+  // Down from the storage roots one folder at a time, starting at the deepest root that holds the folder.
+  const chain = [];
+  for (let p = watched; ; p = path.dirname(p)) {
+    chain.unshift(p);
+    if (path.dirname(p) === p) break;
+  }
+  const row = (p) => page.locator(`.folder-row[title="${p.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`);
+  await page.locator('.folder-row').first().waitFor();
+  let step = chain.length - 1;
+  while (step > 0 && (await row(chain[step]).count()) === 0) step--;
+  for (; step < chain.length; step++) {
+    await row(chain[step]).click();
+    await page.locator('.app-bar-subtitle', { hasText: chain[step] }).waitFor();
+  }
+  const hereCount = await page.locator('.picker-count').textContent();
+  await page.screenshot({ path: path.join(shots, '18-folder-picker.png') });
+  await page.getByRole('button', { name: 'Use this folder' }).click();
+  const lastScan = page.locator('.settings-description', { hasText: 'Last scan' });
+  await lastScan.waitFor({ timeout: 30000 });
+  const firstScan = await lastScan.textContent();
+  const listed = await page.locator('.watched-folder .settings-description').allTextContents();
+  await page.screenshot({ path: path.join(shots, '19-folder-settings.png') });
+  await page.getByRole('button', { name: 'Scan now' }).click();
+  await page.locator('.settings-description', { hasText: '0 new' }).waitFor({ timeout: 30000 });
+  const secondScan = await lastScan.textContent();
+
+  await page.getByRole('button', { name: 'Back' }).click();
+  const readingNow = await page.locator('.book-card').count();
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.locator('.drawer-item', { hasText: 'Books' }).click();
+  await page.locator('.book-card').nth(1).waitFor();
+  const allBooks = await page.locator('.book-open').evaluateAll((els) => els.map((el) => el.getAttribute('title')).sort());
+  check('folder browser walks down to a folder and shows its book files', () => assert.equal(hereCount, '1 book file here'));
+  check('watched folder scan imports books (subfolders too) once, and skips other files', () => {
+    assert.deepEqual(listed, [watched]);
+    assert.equal(firstScan, 'Last scan: 2 book files in your folders, 2 new');
+    assert.equal(secondScan, 'Last scan: 2 book files in your folders, 0 new');
+    assert.deepEqual(allBooks, ['FictionBook Sample', 'Modern Web Sample']);
+  });
+  check('books found by a scan wait under Books, not in Reading now', () => assert.equal(readingNow, 0));
+
+  // Folders: browse the device to a book file and open it.
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.locator('.drawer-item', { hasText: 'Folders' }).click();
+  await page.locator('.folder-row').first().waitFor();
+  step = chain.length - 1;
+  while (step > 0 && (await row(chain[step]).count()) === 0) step--;
+  for (; step < chain.length; step++) {
+    await row(chain[step]).click();
+    await page.locator('.shelf-subtitle', { hasText: chain[step] }).waitFor();
+  }
+  const epubPath = path.join(watched, 'modern-web.epub');
+  const fileRow = page.locator(`.file-row[title="${epubPath.replace(/\\/g, '\\\\')}"]`);
+  await fileRow.waitFor();
+  const folderView = {
+    folders: await page.locator('.folder-row:not(.file-row):not(.folder-up) .folder-name').allTextContents(),
+    up: await page.locator('.folder-up').getAttribute('title'),
+    files: await page.locator('.file-row .folder-name').allTextContents(),
+    meta: await fileRow.locator('.file-meta').textContent(),
+  };
+  await page.screenshot({ path: path.join(shots, '20-folders.png') });
+  await fileRow.click();
+  await page.locator('.reader-title').waitFor();
+  const opened = await page.locator('.reader-title').textContent();
+  await page.getByRole('button', { name: 'Back to library' }).click();
+  const backIn = await page.locator('.shelf-subtitle').textContent();
+  await page.getByRole('button', { name: 'Menu' }).click();
+  await page.locator('.drawer-item', { hasText: 'Books' }).click();
+  await page.locator('.book-card').nth(1).waitFor();
+  const booksAfter = await page.locator('.book-card').count();
+  check('Folders browses to book files and opens one, using the copy already in the library', () => {
+    assert.deepEqual(folderView.folders, ['Series']);
+    assert.equal(folderView.up, folderData);
+    assert.deepEqual(folderView.files, ['modern-web.epub']);
+    assert.match(folderView.meta, /KB · in library/);
+    assert.equal(opened, 'Modern Web Sample');
+    assert.equal(backIn, watched);
+    assert.equal(booksAfter, 2);
+  });
+  await app.close();
+  await rm(folderData, { recursive: true, force: true });
+}
+
 
 await rm(userData, { recursive: true, force: true });
 console.log(results.join('\n'));

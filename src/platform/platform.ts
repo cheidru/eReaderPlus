@@ -19,6 +19,32 @@ export interface EngineInfo {
   updateUrl: string | null;
 }
 
+/** A folder in the in-app folder browser. Storage roots have a display name; other folders show `name`. */
+export interface FolderEntry {
+  name: string;
+  path: string;
+}
+
+export interface FolderListing {
+  /** '' for the list of storage roots. */
+  path: string;
+  /** Where "up" goes: '' for the roots list, null when already at the roots. */
+  parent: string | null;
+  folders: FolderEntry[];
+  /** Book files directly inside this folder, sorted by name. */
+  books: FoundBookFile[];
+  /** Set when the folder could not be read (missing, or no permission). */
+  error: string | null;
+}
+
+/** A book file found in a watched folder. `modified` is in ms since the epoch. */
+export interface FoundBookFile {
+  file: FileRef;
+  path: string;
+  size: number;
+  modified: number;
+}
+
 /** Oldest Chromium major the reader is tested against. */
 export const MIN_ENGINE_MAJOR = 120;
 
@@ -49,6 +75,14 @@ export interface Platform {
   openExternal(url: string): Promise<void>;
   /** Sets prefers-color-scheme seen by books, where the platform allows it. */
   setColorScheme(scheme: 'light' | 'dark'): Promise<void>;
+  /** Whether the app may browse the device's folders (Android asks the user once; desktop always may). */
+  hasFolderAccess(): Promise<boolean>;
+  /** Asks the user for folder access where needed. Resolves to whether it was granted. */
+  requestFolderAccess(): Promise<boolean>;
+  /** Subfolders and count of book files (by extension) of a folder, or the storage roots for ''. */
+  listFolder(path: string, extensions: string[]): Promise<FolderListing>;
+  /** Book files (by extension) in a folder and its subfolders, skipping hidden folders and links. */
+  findBookFiles(folder: string, extensions: string[]): Promise<FoundBookFile[]>;
 }
 
 export function bookUrl(platform: Platform, bookId: string, path: string): string {

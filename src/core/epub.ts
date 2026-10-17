@@ -3,6 +3,7 @@ import { deobfuscateFonts } from './fonts';
 import { xhtmlToHtml } from './html';
 import { injectReader, isHtmlMediaType } from './inject';
 import { resolveHref, splitFragment } from './paths';
+import { epubSeries } from './series';
 import type { BookManifest, SpineItem, TocItem } from './types';
 import { all, attr, child, children, first, parseXml, text } from './xml';
 
@@ -15,7 +16,13 @@ interface ManifestItem {
   properties: string[];
 }
 
-export type ParsedBook = Omit<BookManifest, 'version' | 'id' | 'format'>;
+export type ParsedBook = Omit<BookManifest, 'version' | 'id' | 'format'> & {
+  /**
+   * A cover still being drawn from the first page (PDF; pdf.js renders in its worker), which can take longer
+   * than the rest of the import: the book is readable before it settles. `cover` is null meanwhile.
+   */
+  pendingCover?: Promise<string | null>;
+};
 
 export async function findPackagePath(fs: BookFs): Promise<string> {
   const container = parseXml(await fs.readText(CONTAINER_PATH), CONTAINER_PATH);
@@ -130,6 +137,7 @@ export function parsePackage(opf: Document, opfPath: string): PackageInfo {
     authors: all(metadata, 'creator').map(text).filter(Boolean),
     language: text(first(metadata, 'language')),
     cover: cover?.mediaType.startsWith('image/') ? cover.href : null,
+    series: epubSeries(opf),
     layout: metaProperty('rendition:layout') === 'pre-paginated' ? 'pre-paginated' : 'reflowable',
     direction: spineEl && attr(spineEl, 'page-progression-direction') === 'rtl' ? 'rtl' : 'ltr',
     spine,

@@ -16,7 +16,7 @@ const container = `<?xml version="1.0"?>
   <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
 </container>`;
 
-function epub({ id, title, chapters }) {
+function epub({ id, title, chapters, metadata = '' }) {
   const files = {
     mimetype: [strToU8('application/epub+zip'), { level: 0 }],
     'META-INF/container.xml': strToU8(container),
@@ -34,6 +34,7 @@ function epub({ id, title, chapters }) {
     <dc:creator>eReaderPlus samples</dc:creator>
     <dc:language>en</dc:language>
     <meta property="dcterms:modified">2026-01-01T00:00:00Z</meta>
+    ${metadata}
   </metadata>
   <manifest>
     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
@@ -147,6 +148,9 @@ await writeFile(
   epub({
     id: 'urn:uuid:7f1c2d3e-0000-4000-8000-000000000001',
     title: 'Modern Web Sample',
+    metadata: `<meta property="belongs-to-collection" id="series">eReaderPlus Samples</meta>
+    <meta refines="#series" property="collection-type">series</meta>
+    <meta refines="#series" property="group-position">1</meta>`,
     chapters: [
       { file: 'modern.xhtml', title: 'Modern web features', html: modernChapter },
       { file: 'interactive.xhtml', title: 'Interactive chapter', html: scriptedChapter },
@@ -199,7 +203,7 @@ await writeFile(
   `<?xml version="1.0" encoding="utf-8"?>
 <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink">
   <description>
-    <title-info><author><first-name>Sample</first-name><last-name>Author</last-name></author><book-title>FictionBook Sample</book-title><lang>en</lang></title-info>
+    <title-info><author><first-name>Sample</first-name><last-name>Author</last-name></author><book-title>FictionBook Sample</book-title><lang>en</lang><sequence name="eReaderPlus Samples" number="2"/></title-info>
     <document-info><id>fb2-sample-1</id></document-info>
   </description>
   <body>

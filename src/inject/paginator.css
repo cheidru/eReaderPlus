@@ -32,6 +32,12 @@ html.ereader-paginated {
   column-fill: auto !important;
 }
 
+/* Two pages side by side in landscape. The page turn still scrolls one viewport, which now holds two columns. */
+html.ereader-paginated.ereader-spread {
+  column-width: auto !important;
+  column-count: 2 !important;
+}
+
 html.ereader-paginated body {
   margin: 0 !important;
   max-width: none !important;
@@ -75,6 +81,18 @@ html.ereader-fixed.ereader-fixed-scaled {
   transform: translate(var(--ereader-fixed-x), var(--ereader-fixed-y)) scale(var(--ereader-fixed-scale));
 }
 
+/* Space held over a zoomed page: an open hand, closed while dragging the page. */
+html.ereader-hand,
+html.ereader-hand * {
+  cursor: grab !important;
+  user-select: none !important;
+}
+
+html.ereader-hand.ereader-hand-drag,
+html.ereader-hand.ereader-hand-drag * {
+  cursor: grabbing !important;
+}
+
 /* --- Typography overrides (off in "publisher layout" mode) --- */
 
 html.ereader-override:not(.ereader-fixed) {
@@ -87,6 +105,21 @@ html.ereader-custom-font body :where(:not(code, pre, kbd, samp, code *, pre *, s
 
 html.ereader-custom-line-height body :where(p, li, dd, dt, blockquote, div, span, td, th) {
   line-height: var(--ereader-line-height) !important;
+}
+
+/* Heavier text: an outline in the text color thickens every font evenly, and bold text stays bolder. */
+html.ereader-bolder:not(.ereader-fixed) body,
+html.ereader-bolder:not(.ereader-fixed) body * {
+  -webkit-text-stroke: var(--ereader-text-stroke) currentColor !important;
+}
+
+/* The search match the reader jumped to. */
+::highlight(ereader-search) {
+  background-color: rgb(255 200 0 / 0.55);
+}
+
+html[data-ereader-theme='dark'] ::highlight(ereader-search) {
+  background-color: rgb(255 170 0 / 0.45);
 }
 
 /* --- Themes --- */

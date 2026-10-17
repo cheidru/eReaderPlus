@@ -3,6 +3,7 @@ import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { IPC } from '../src/platform/electron-api';
 import * as bookstore from './bookstore';
+import { findBookFiles, listFolder } from './folders';
 import { kvGet, kvSet } from './kv';
 import { APP_ORIGIN, registerProtocols, registerSchemes } from './protocols';
 import { hardenAllWebContents, hardenSession, isAppUrl } from './security';
@@ -75,7 +76,8 @@ function createWindow(readerSession: Electron.Session): void {
     minWidth: 360,
     minHeight: 480,
     show: false,
-    backgroundColor: '#f6f5f2',
+    // The default app theme's page (Dusk, dark), so the window doesn't flash another color before the UI draws.
+    backgroundColor: '#14111b',
     autoHideMenuBar: true,
     webPreferences: {
       session: readerSession,
@@ -96,6 +98,11 @@ function createWindow(readerSession: Electron.Session): void {
   // Main-frame navigations only (reloads); the renderer re-announces itself via takePendingOpenFiles.
   mainWindow.webContents.on('did-navigate', () => (rendererReady = false));
   void mainWindow.loadURL(devUrl ?? `${APP_ORIGIN}/index.html`);
+}
+
+/** An argument that must be a list of strings (file extensions). */
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
 
 /** IPC is only accepted from the app's own top-level page, never from book frames. */
@@ -139,6 +146,8 @@ function registerIpc(): void {
     await shell.openExternal(url);
   });
   // Drives prefers-color-scheme for the app and every book frame.
+  handle(IPC.listFolder, (dir: string, extensions: string[]) => listFolder(String(dir), stringList(extensions)));
+  handle(IPC.findBookFiles, (dir: string, extensions: string[]) => findBookFiles(String(dir), stringList(extensions)));
   handle(IPC.setColorScheme, (scheme: string) => {
     nativeTheme.themeSource = scheme === 'dark' ? 'dark' : 'light';
   });
