@@ -1,7 +1,7 @@
 {
   "name": "ereaderplus",
   "productName": "eReaderPlus",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "homepage": "https://github.com/cheidru/eReaderPlus",
   "description": "Ebook reader rendering books with an up-to-date Chromium engine",
   "private": true,
