@@ -11,11 +11,12 @@ const fakePage = (n: number, bytes: number, reduced = false): DjvuPageData => ({
 });
 
 /** A decoder of `count` pages of 100 bytes that records which pages it decoded; `fail` pages throw. */
-function fakeDecoder(count: number, fail: number[] = []) {
+function fakeDecoder(count: number, fail: number[] = [], parallel = 1) {
   const decoded: number[] = [];
   let closed = false;
   const decoder: DjvuPageDecoder = {
     count,
+    parallel,
     async decode(n) {
       decoded.push(n);
       if (fail.includes(n)) throw new Error(`bad page ${n}`);
@@ -95,6 +96,31 @@ describe('DjvuPageStore', () => {
     await settle();
     expect(decoded.filter((n) => n === 2)).toHaveLength(1);
     expect(new Set(decoded)).toEqual(new Set([1, 2, 3, 4]));
+  });
+
+  it('decodes as many pages at once as the decoder can, the pages asked for first', async () => {
+    const { decoder } = fakeDecoder(20, [], 3);
+    let running = 0;
+    let most = 0;
+    const order: number[] = [];
+    const slow: DjvuPageDecoder = {
+      ...decoder,
+      async decode(n) {
+        order.push(n);
+        most = Math.max(most, ++running);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        running--;
+        return decoder.decode(n);
+      },
+    };
+    const store = new DjvuPageStore(async () => slow, 10_000, reduce);
+    await Promise.all([store.page(10), store.page(11)]);
+    await settle();
+    await settle();
+    expect(order.slice(0, 2)).toEqual([10, 11]);
+    expect(most).toBe(3);
+    expect(new Set(order).size).toBe(order.length);
+    store.close();
   });
 
   it('stops decoding and fails waiting pages when closed', async () => {

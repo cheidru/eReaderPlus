@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { bookTexts, findInTexts, isSearchable } from '../../core/booksearch';
 import { DJVU_SOURCE, loadDjvuLibrary } from '../../core/djvu';
-import { DjvuPageStore, djvuMemoryBudget, openDjvuWorker } from '../../core/djvu-pages';
+import { DjvuPageStore, djvuMemoryBudget, openDjvuWorkers } from '../../core/djvu-pages';
 import { loadManifest } from '../../core/import';
 import { loadBookView, loadProgress, markOpened, overallProgress, saveBookView, saveProgress, type BookView } from '../../core/library';
 import { MESSAGE_TAG, parseFrameMessage, type DjvuPageData, type FixedSpread, type FrameSettings, type GotoTarget, type HostMessage } from '../../core/messages';
@@ -9,6 +9,7 @@ import { splitFragment } from '../../core/paths';
 import { hasPageSpreads, spreadEnd, spreadFits, spreadStart } from '../../core/spread';
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP, type BookManifest, type Progress, type ReaderSettings, type TocItem } from '../../core/types';
 import { bookUrl, type Platform } from '../../platform';
+import { GalaxySpinner } from '../GalaxySpinner';
 import { Icon } from '../icons';
 import { MIN_QUERY_LENGTH, NO_SEARCH, SearchPanel, type SearchState } from './SearchPanel';
 import { SettingsPanel } from './SettingsPanel';
@@ -35,6 +36,8 @@ type Panel = 'toc' | 'settings' | 'search' | null;
 const WHEEL_THROTTLE_MS = 250;
 /** Search waits until typing pauses this long. */
 const SEARCH_DELAY_MS = 300;
+/** A page that takes longer than this to show gets the galaxy spinner; quicker ones don't flash it. */
+const WAIT_SPINNER_DELAY_MS = 300;
 /** Above this many documents, chapter marks on the position slider would merge into a solid bar. */
 const MAX_SLIDER_MARKS = 120;
 
@@ -59,6 +62,12 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
   const pendingTarget = useRef<GotoTarget>({ kind: 'fraction', value: 0 });
   /** True once the current spine document's paginator has announced itself. */
   const frameReady = useRef(false);
+  /**
+   * Whether the current spine document shows its content: once its paginator announces itself, or for DjVu once the
+   * app has sent it its page (decoding a page can take a while). The galaxy spinner shows while it doesn't.
+   */
+  const [frameShown, setFrameShown] = useState(false);
+  const spineIndexRef = useRef(0);
   const lastWheel = useRef(0);
   /** Fixed layout: the zoom the reader chose, carried over to the pages that follow. */
   const fixedZoom = useRef({ zoom: 1, panX: 0.5 });
@@ -124,7 +133,7 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
   useEffect(() => {
     if (format !== 'djvu') return;
     const store = new DjvuPageStore(
-      async () => openDjvuWorker(await loadDjvuLibrary(), () => platform.readBinary(bookId, DJVU_SOURCE)),
+      async () => openDjvuWorkers(await loadDjvuLibrary(), () => platform.readBinary(bookId, DJVU_SOURCE)),
       djvuMemoryBudget(),
     );
     djvuPages.current = store;
@@ -145,15 +154,27 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
       const store = djvuPages.current;
       if (!store) return reply(0, null);
       store.page(page, full).then(
-        (data) => reply(store.count, data),
+        (data) => {
+          reply(store.count, data);
+          // DjVu page documents are the spine documents, one per page.
+          if (!full && page === spineIndexRef.current + 1) setFrameShown(true);
+        },
         (error: unknown) => {
           console.warn(`DjVu page ${page} could not be decoded in the app:`, error);
           reply(0, null);
+          setFrameShown(true);
         },
       );
     },
     [origin],
   );
+
+  // A new spine document is not shown until it says so.
+  useEffect(() => {
+    spineIndexRef.current = spineIndex;
+    setFrameShown(false);
+  }, [spineIndex]);
+  const showWait = useDelayed(!frameShown, WAIT_SPINNER_DELAY_MS);
 
   const flushSave = useCallback(() => {
     const progress = pendingSave.current;
@@ -264,6 +285,7 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
       switch (message.type) {
         case 'ready':
           frameReady.current = true;
+          if (manifest.format !== 'djvu') setFrameShown(true);
           if (frameSettings) post({ tag: MESSAGE_TAG, type: 'settings', settings: frameSettings });
           post({ tag: MESSAGE_TAG, type: 'goto', target: pendingTarget.current });
           if (manifest.layout === 'pre-paginated') post({ tag: MESSAGE_TAG, type: 'zoom', ...fixedZoom.current });
@@ -451,6 +473,13 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
         sandbox="allow-scripts allow-same-origin"
         allow="fullscreen; autoplay"
       />
+      {showWait && (
+        <div className="reader-wait" role="status" aria-label="Getting the page ready">
+          <div className="reader-wait-sky">
+            <GalaxySpinner />
+          </div>
+        </div>
+      )}
 
       {chromeVisible ? (
         <>
@@ -591,6 +620,17 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
       )}
     </div>
   );
+}
+
+/** `on`, once it has stayed on for `delay` ms; off at once. */
+function useDelayed(on: boolean, delay: number): boolean {
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    if (!on) return setLate(false);
+    const timer = window.setTimeout(() => setLate(true), delay);
+    return () => window.clearTimeout(timer);
+  }, [on, delay]);
+  return on && late;
 }
 
 function findTocLabel(items: TocItem[], spineHref: string): string | null {

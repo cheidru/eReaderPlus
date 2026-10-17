@@ -22,6 +22,26 @@
   background: #1c1c1e;
 }
 
+/* A page still being prepared (a DjVu page decoding, a chapter loading): the galaxy spinner on a patch of night sky. */
+.reader-wait {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.reader-wait-sky {
+  display: grid;
+  place-items: center;
+  width: 12rem;
+  height: 12rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, #1f2a5c 0%, #0d1230 60%, rgb(7 10 28 / 0.9) 100%);
+  box-shadow: 0 0.5rem 2rem rgb(0 0 0 / 0.35);
+}
+
 .reader-loading {
   display: grid;
   place-items: center;

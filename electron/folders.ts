@@ -16,28 +16,75 @@ const isHidden = (name: string) => name.startsWith('.') || SYSTEM_FOLDERS.has(na
 const hasExtension = (name: string, extensions: Set<string>) => extensions.has(path.extname(name).slice(1).toLowerCase());
 const byName = (a: FolderEntry, b: FolderEntry) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true });
 
-async function exists(dir: string): Promise<boolean> {
+/** How long a drive or folder may take to answer: a disconnected network drive can hang for minutes. */
+const RESPONSE_TIMEOUT_MS = 2000;
+
+class NotRespondingError extends Error {}
+
+/** `promise`, or a NotRespondingError if it takes longer than `ms` (the work itself goes on in the background). */
+function answerWithin<T>(promise: Promise<T>, ms = RESPONSE_TIMEOUT_MS): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new NotRespondingError('The drive is not responding')), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
+ * Checks still waiting for an answer, by path: one that hangs is shared by everyone who asks again meanwhile, so
+ * a drive that doesn't respond doesn't tie up another file system thread each time the folder list is shown.
+ */
+const pending = new Map<string, Promise<unknown>>();
+
+function once<T>(key: string, start: () => Promise<T>): Promise<T> {
+  let running = pending.get(key) as Promise<T> | undefined;
+  if (!running) {
+    running = start();
+    pending.set(key, running);
+    void running.catch(() => {}).finally(() => pending.delete(key));
+  }
+  return running;
+}
+
+/** Whether a drive is there and answers in time. One still not answering since it was last asked is left out at once. */
+async function available(root: string): Promise<boolean> {
+  const key = `access:${root}`;
+  if (pending.has(key)) return false;
   try {
-    await access(dir);
+    await answerWithin(once(key, () => access(root)));
     return true;
   } catch {
     return false;
   }
 }
 
-/** Home folder first, then drives (Windows), volumes (macOS) or the file system root and mounts (Linux). */
+/** A folder's entries; a NotRespondingError if its drive doesn't answer in time. */
+const readFolder = (dir: string) => answerWithin(once(`readdir:${dir}`, () => readdir(dir, { withFileTypes: true })));
+
+/**
+ * Home folder first, then drives (Windows), volumes (macOS) or the file system root and mounts (Linux). Drives that
+ * don't answer in time (a mapped network drive whose server is away) are left out.
+ */
 async function roots(): Promise<FolderEntry[]> {
   const home = os.homedir();
   const list: FolderEntry[] = [{ name: `Home (${home})`, path: home }];
   if (process.platform === 'win32') {
     const letters = 'CDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
-    const drives = await Promise.all(letters.map(async (l) => ((await exists(`${l}:\\`)) ? `${l}:\\` : null)));
+    const drives = await Promise.all(letters.map(async (l) => ((await available(`${l}:\\`)) ? `${l}:\\` : null)));
     for (const drive of drives) if (drive) list.push({ name: `Drive ${drive.slice(0, 2)}`, path: drive });
   } else {
     list.push({ name: 'File system (/)', path: '/' });
     const mounts = process.platform === 'darwin' ? ['/Volumes'] : [`/media/${os.userInfo().username}`, '/mnt'];
     for (const mount of mounts) {
-      const entries = await readdir(mount, { withFileTypes: true }).catch(() => [] as Dirent[]);
+      const entries = await readFolder(mount).catch(() => [] as Dirent[]);
       for (const e of entries) if (e.isDirectory() && !isHidden(e.name)) list.push({ name: e.name, path: path.join(mount, e.name) });
     }
   }
@@ -51,7 +98,7 @@ export async function listFolder(dir: string, extensions: string[]): Promise<Fol
   const parent = parentDir === dir ? '' : parentDir;
   try {
     const wanted = new Set(extensions);
-    const entries = await readdir(dir, { withFileTypes: true });
+    const entries = await readFolder(dir);
     const folders = entries.filter((e) => e.isDirectory() && !isHidden(e.name)).map((e) => ({ name: e.name, path: path.join(dir, e.name) }));
     const books: FoundBookFile[] = [];
     for (const e of entries.filter((e) => e.isFile() && hasExtension(e.name, wanted))) {
@@ -62,7 +109,8 @@ export async function listFolder(dir: string, extensions: string[]): Promise<Fol
     books.sort((a, b) => a.file.name.localeCompare(b.file.name, undefined, { sensitivity: 'base', numeric: true }));
     return { path: dir, parent, folders: folders.sort(byName), books, error: null };
   } catch (error) {
-    return { path: dir, parent, folders: [], books: [], error: error instanceof Error ? error.message : String(error) };
+    const message = error instanceof NotRespondingError ? 'This drive is not responding. If it is a network drive, check its connection.' : error instanceof Error ? error.message : String(error);
+    return { path: dir, parent, folders: [], books: [], error: message };
   }
 }
 
@@ -71,8 +119,8 @@ export async function findBookFiles(folder: string, extensions: string[]): Promi
   const found: FoundBookFile[] = [];
   const walk = async (dir: string, depth: number): Promise<void> => {
     if (depth > MAX_DEPTH || found.length >= MAX_FILES) return;
-    // An unreadable subfolder is skipped, not fatal: the rest of the collection still counts.
-    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [] as Dirent[]);
+    // An unreadable (or unresponsive) subfolder is skipped, not fatal: the rest of the collection still counts.
+    const entries = await readFolder(dir).catch(() => [] as Dirent[]);
     for (const entry of entries) {
       if (found.length >= MAX_FILES) return;
       const full = path.join(dir, entry.name);
