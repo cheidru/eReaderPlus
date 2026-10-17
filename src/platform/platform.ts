@@ -83,6 +83,13 @@ export interface Platform {
   listFolder(path: string, extensions: string[]): Promise<FolderListing>;
   /** Book files (by extension) in a folder and its subfolders, skipping hidden folders and links. */
   findBookFiles(folder: string, extensions: string[]): Promise<FoundBookFile[]>;
+  /**
+   * Desktop: subscribes to a newer version having been downloaded (it installs when the app quits); delivers one
+   * already downloaded at once. Android installs updates from the APK instead (core/app-updates.ts).
+   */
+  onUpdateReady?(listener: (version: string) => void): () => void;
+  /** Desktop: restarts into the downloaded version. */
+  installUpdate?(): Promise<void>;
 }
 
 export function bookUrl(platform: Platform, bookId: string, path: string): string {

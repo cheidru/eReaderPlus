@@ -20,6 +20,12 @@ export interface ElectronNativeApi {
   setColorScheme(scheme: 'light' | 'dark'): Promise<void>;
   listFolder(path: string, extensions: string[]): Promise<FolderListing>;
   findBookFiles(folder: string, extensions: string[]): Promise<FoundBookFile[]>;
+  /** A newer version was downloaded and installs when the app quits. */
+  onUpdateReady(listener: (version: string) => void): () => void;
+  /** The version downloaded and waiting to be installed, if any (it may be ready before the UI listens). */
+  readyUpdate(): Promise<string | null>;
+  /** Restarts into the downloaded version. */
+  installUpdate(): Promise<void>;
 }
 
 export const IPC = {
@@ -39,6 +45,9 @@ export const IPC = {
   setColorScheme: 'ereader:set-color-scheme',
   listFolder: 'ereader:list-folder',
   findBookFiles: 'ereader:find-book-files',
+  updateReady: 'ereader:update-ready',
+  readyUpdate: 'ereader:ready-update',
+  installUpdate: 'ereader:install-update',
 } as const;
 
 export const BOOK_SCHEME = 'book';

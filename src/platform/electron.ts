@@ -51,5 +51,11 @@ export function createElectronPlatform(api: ElectronNativeApi): Platform {
     requestFolderAccess: async () => true,
     listFolder: api.listFolder,
     findBookFiles: api.findBookFiles,
+    onUpdateReady(listener) {
+      const unsubscribe = api.onUpdateReady(listener);
+      void api.readyUpdate().then((version) => version && listener(version));
+      return unsubscribe;
+    },
+    installUpdate: api.installUpdate,
   };
 }

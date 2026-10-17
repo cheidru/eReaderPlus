@@ -70,6 +70,8 @@ export function App() {
   const [engine, setEngine] = useState<EngineInfo | null>(null);
   /** A newer Android release, which the user installs from its APK (the desktop app updates itself). */
   const [update, setUpdate] = useState<AppUpdate | null>(null);
+  /** Desktop: a newer version downloaded in the background, offered as a restart until the reader says later. */
+  const [updateReady, setUpdateReady] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -214,6 +216,8 @@ export function App() {
       if (!(await platform.hasFolderAccess())) setModal({ kind: 'folderAccess' });
     })();
   }, [platform]);
+
+  useEffect(() => platform?.onUpdateReady?.(setUpdateReady), [platform]);
 
   useEffect(() => {
     if (platform?.kind !== 'android') return;
@@ -362,6 +366,18 @@ export function App() {
             }}
           >
             Not now
+          </button>
+        </div>
+      )}
+
+      {updateReady && (
+        <div className="app-banner" role="status">
+          eReaderPlus {updateReady} is ready. It installs when you close the app.
+          <button type="button" className="link-button" onClick={() => void platform.installUpdate?.()}>
+            Restart now
+          </button>
+          <button type="button" className="link-button" onClick={() => setUpdateReady(null)}>
+            Later
           </button>
         </div>
       )}

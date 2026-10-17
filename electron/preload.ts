@@ -10,6 +10,13 @@ const api: ElectronNativeApi = {
     return () => ipcRenderer.off(IPC.openFile, handler);
   },
   takePendingOpenFiles: () => ipcRenderer.invoke(IPC.takePendingOpenFiles),
+  onUpdateReady(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, version: string) => listener(version);
+    ipcRenderer.on(IPC.updateReady, handler);
+    return () => ipcRenderer.off(IPC.updateReady, handler);
+  },
+  readyUpdate: () => ipcRenderer.invoke(IPC.readyUpdate),
+  installUpdate: () => ipcRenderer.invoke(IPC.installUpdate),
   extractArchive: (path, bookId) => ipcRenderer.invoke(IPC.extractArchive, path, bookId),
   copyRawFile: (path, bookId, dest) => ipcRenderer.invoke(IPC.copyRawFile, path, bookId, dest),
   readText: (bookId, path) => ipcRenderer.invoke(IPC.readText, bookId, path),

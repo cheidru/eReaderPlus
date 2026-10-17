@@ -7,7 +7,7 @@ import { findBookFiles, listFolder } from './folders';
 import { kvGet, kvSet } from './kv';
 import { APP_ORIGIN, registerProtocols, registerSchemes } from './protocols';
 import { hardenAllWebContents, hardenSession, isAppUrl } from './security';
-import { initAutoUpdate } from './updater';
+import { initAutoUpdate, installUpdate, readyUpdate } from './updater';
 
 const BOOK_EXTENSIONS = ['epub', 'kepub', 'fb2', 'fbz', 'cbz', 'zip', 'mobi', 'azw', 'azw3', 'djvu', 'djv', 'pdf', 'chm', 'lit'];
 const devUrl = process.env.ELECTRON_RENDERER_URL ?? null;
@@ -66,7 +66,7 @@ function start(): void {
   registerProtocols(readerSession, { webRoot, readerAssetsDir, devOrigin });
   registerIpc();
   createWindow(readerSession);
-  initAutoUpdate();
+  initAutoUpdate((version) => mainWindow?.webContents.send(IPC.updateReady, version));
 }
 
 function createWindow(readerSession: Electron.Session): void {
@@ -148,6 +148,8 @@ function registerIpc(): void {
   // Drives prefers-color-scheme for the app and every book frame.
   handle(IPC.listFolder, (dir: string, extensions: string[]) => listFolder(String(dir), stringList(extensions)));
   handle(IPC.findBookFiles, (dir: string, extensions: string[]) => findBookFiles(String(dir), stringList(extensions)));
+  handle(IPC.readyUpdate, () => readyUpdate());
+  handle(IPC.installUpdate, () => installUpdate());
   handle(IPC.setColorScheme, (scheme: string) => {
     nativeTheme.themeSource = scheme === 'dark' ? 'dark' : 'light';
   });
