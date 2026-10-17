@@ -3,6 +3,7 @@
  * Book documents are untrusted: the host must validate every incoming message with
  * `parseFrameMessage` and treat its contents as data only.
  */
+import type { PdfPageData } from './pdf-common';
 import type { Flow, Theme } from './types';
 
 export const MESSAGE_TAG = 'ereader';
@@ -76,7 +77,13 @@ export type HostMessage =
    * DjVu: the answer to a page document's `djvuPage` request. `count` is the book's page count, or 0 when the app
    * can't decode the book (the page document then decodes the page itself); `data` is null past the last page.
    */
-  | { tag: typeof MESSAGE_TAG; type: 'djvuPage'; page: number; full: boolean; count: number; data: DjvuPageData | null };
+  | { tag: typeof MESSAGE_TAG; type: 'djvuPage'; page: number; full: boolean; count: number; data: DjvuPageData | null }
+  /**
+   * PDF: the answer to a page document's `pdfPage` request, at the scale asked for. `count` is the book's page count, or 0
+   * when the app can't draw the book (the page document then draws its pages itself); `data` is null past the last
+   * page, or when a request for the same page at another scale replaced this one.
+   */
+  | { tag: typeof MESSAGE_TAG; type: 'pdfPage'; page: number; scale: number; count: number; rtl: boolean; data: PdfPageData | null };
 
 export type FrameMessage =
   | { type: 'ready' }
@@ -93,7 +100,9 @@ export type FrameMessage =
   | { type: 'link'; href: string }
   | { type: 'external'; href: string }
   /** DjVu: asks the app for a page (1-based), which it keeps decoded in memory while the book is open; `full`: at full resolution. */
-  | { type: 'djvuPage'; page: number; full: boolean };
+  | { type: 'djvuPage'; page: number; full: boolean }
+  /** PDF: asks the app for a page (1-based) drawn at `scale` device px per PDF point; the app keeps the book open and draws pages ahead. */
+  | { type: 'pdfPage'; page: number; scale: number };
 
 const KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', 'Escape']);
 
@@ -147,6 +156,9 @@ export function parseFrameMessage(data: unknown): FrameMessage | null {
       return isShortString(m.href) && /^(https?:|mailto:)/i.test(m.href) ? { type: 'external', href: m.href } : null;
     case 'djvuPage':
       return Number.isInteger(m.page) && (m.page as number) >= 1 ? { type: 'djvuPage', page: m.page as number, full: m.full === true } : null;
+    case 'pdfPage':
+      // The drawing is capped in pixels (MAX_PDF_PAGE_PIXELS), whatever the scale.
+      return Number.isInteger(m.page) && (m.page as number) >= 1 && isNum(m.scale) && m.scale > 0 ? { type: 'pdfPage', page: m.page as number, scale: m.scale } : null;
     default:
       return null;
   }

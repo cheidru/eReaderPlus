@@ -30,8 +30,8 @@ export function djvuWorkerCount(): number {
   return Math.max(1, Math.min(Math.floor(cores / 2), gigabytes >= 4 ? 4 : 2));
 }
 
-/** Bytes of decoded pages to keep: a share of the device's memory, as far as the browser tells it. */
-export function djvuMemoryBudget(): number {
+/** Bytes of decoded pages to keep (DjVu, and PDF pages drawn ahead): a share of the device's memory, as far as the browser tells it. */
+export function pageMemoryBudget(): number {
   const gigabytes = (navigator as { deviceMemory?: number }).deviceMemory ?? 4;
   return Math.min(1024, Math.max(192, gigabytes * 64)) * 2 ** 20;
 }

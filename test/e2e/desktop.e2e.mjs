@@ -468,6 +468,8 @@ async function frameWithText(page, text) {
     assert.ok(near(first.color, [200, 40, 40]), JSON.stringify(first.color));
     assert.match(first.text, /Page One/);
   });
+  const pdfDrawer = await first.frame.evaluate(() => document.documentElement.dataset.pdfDrawer);
+  check('PDF pages are drawn by the app, which keeps the book open', () => assert.equal(pdfDrawer, 'app'));
   const title = await page.locator('.reader-title').textContent();
   check('PDF title from metadata', () => assert.equal(title, 'PDF Sample'));
   await page.keyboard.press(' ');

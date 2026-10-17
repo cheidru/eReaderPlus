@@ -1,18 +1,14 @@
 /**
- * Runs inside each PDF page document (written by src/core/pdf.ts). Renders the page with pdf.js at the
- * size it is displayed at, adds pdf.js's selectable text layer, and turns link annotations into links
- * (other pages of the book, or external URLs, which the paginator hands to the app).
+ * Runs inside each PDF page document (written by src/core/pdf.ts). Gets its page drawn by the app, which keeps the
+ * open book and draws pages ahead of the reader (src/core/pdf-pages.ts); outside the app, or if the app can't, opens
+ * the book's PDF with pdf.js itself. Shows the page at the size it is displayed at, adds pdf.js's selectable text
+ * layer, and turns link annotations into links (other pages of the book, or external URLs, which the paginator hands
+ * to the app).
  * In a two-page spread (the paginator sets data-ereader-spread) the next page of the PDF is shown beside it.
  */
 import type * as PdfJs from 'pdfjs-dist';
-import { CSS_PX_PER_PT, destinationPage, pdfDocumentOptions, PDFJS_MODULE, PDFJS_WORKER } from '../core/pdf-common';
-
-type Page = PdfJs.PDFPageProxy;
-
-const pagePath = (n: number) => `${String(n).padStart(4, '0')}.html`;
-
-/** About 64 MB of canvas memory, shared by the pages shown. */
-const MAX_CANVAS_PIXELS = 4096 * 4096;
+import { MESSAGE_TAG, type HostMessage } from '../core/messages';
+import { CSS_PX_PER_PT, MAX_PDF_PAGE_PIXELS, openPdfRenderer, PDFJS_MODULE, PDFJS_WORKER, type PdfPageData, type PdfPageInfo, type PdfPageRenderer } from '../core/pdf-common';
 
 const root = document.documentElement;
 
@@ -22,60 +18,129 @@ const zoom = () => Number(root.dataset.ereaderZoom) || 1;
 /** How the paginator lays this document out as two pages side by side (FixedSpread), if it does. */
 const spreadMode = () => root.dataset.ereaderSpread;
 
-/**
- * A PDF page shown in this document. Its box (CSS px, in document coordinates) is the size of the canvas
- * and of the text and link layers on top of it; `data-ereader-part` tells the paginator which page it is.
- */
-interface Sheet {
-  page: Page;
-  box: PdfJs.PageViewport;
-  element: HTMLElement;
-  canvas: HTMLCanvasElement;
-  task: PdfJs.RenderTask | null;
-  drawn: string;
+let library: Promise<typeof PdfJs> | null = null;
+
+/** pdf.js, for the text layer, and to draw pages here when the app doesn't. */
+function loadLibrary(): Promise<typeof PdfJs> {
+  library ??= (import(/* @vite-ignore */ new URL(PDFJS_MODULE, location.href).href) as Promise<typeof PdfJs>).then((lib) => {
+    lib.GlobalWorkerOptions.workerSrc = new URL(PDFJS_WORKER, location.href).href;
+    return lib;
+  });
+  return library;
 }
 
-function createSheet(page: Page, box: PdfJs.PageViewport, part: number): Sheet {
+/** How long to wait for the app before drawing here: it answers at once, or once it has read and parsed the book. */
+const APP_TIMEOUT_MS = 30000;
+
+interface AppAnswer {
+  count: number;
+  rtl: boolean;
+  data: PdfPageData | null;
+}
+
+/** Asks the app for page `n` drawn at `scale`. Null when there is no app, or it can't draw the book. */
+function pageFromApp(n: number, scale: number): Promise<AppAnswer | null> {
+  if (window.parent === window) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const finish = (answer: AppAnswer | null) => {
+      removeEventListener('message', onMessage);
+      clearTimeout(timer);
+      resolve(answer);
+    };
+    // The app answers every page document shown in this frame: keep the answer to this request only.
+    const onMessage = (event: MessageEvent) => {
+      const message = event.data as HostMessage;
+      if (event.source !== window.parent || typeof message !== 'object' || message === null) return;
+      if (message.tag !== MESSAGE_TAG || message.type !== 'pdfPage' || message.page !== n || message.scale !== scale) return;
+      if (!message.count) return finish(null);
+      finish({ count: message.count, rtl: message.rtl, data: message.data?.image instanceof ImageBitmap ? message.data : null });
+    };
+    const timer = setTimeout(() => finish(null), APP_TIMEOUT_MS);
+    addEventListener('message', onMessage);
+    window.parent.postMessage({ tag: MESSAGE_TAG, type: 'pdfPage', page: n, scale }, '*');
+  });
+}
+
+/** The book's pages, drawn by the app, or here once the app can't. */
+const book = {
+  count: 0,
+  rtl: false,
+  local: null as Promise<PdfPageRenderer> | null,
+  /** Which drew the pages ('app' or 'here'), recorded on the root element once the page is shown (diagnostics and tests). */
+  drawer: 'app',
+
+  /** Page `n` at `scale` device px per PDF point; null past the last page, or when the app drew it at a newer scale instead. */
+  async page(source: string, n: number, scale: number, signal: AbortSignal): Promise<PdfPageData | null> {
+    if (!this.local) {
+      const answer = await pageFromApp(n, scale);
+      if (answer) {
+        this.count = answer.count;
+        this.rtl = answer.rtl;
+        return answer.data;
+      }
+      this.drawer = 'here';
+      this.local = loadLibrary().then((lib) => openPdfRenderer(lib, { url: source }));
+    }
+    const renderer = await this.local;
+    this.count = renderer.count;
+    this.rtl = renderer.rtl;
+    return n > renderer.count ? null : renderer.page(n, scale, signal);
+  },
+};
+
+/**
+ * A PDF page shown in this document. Its box (CSS px, in document coordinates) is the size of the canvas and of the
+ * text and link layers on top of it: its page's box scaled by `fit` (1 for this document's own page, which sets the
+ * box; the next page in a spread is fitted into it). `data-ereader-part` tells the paginator which page it is.
+ */
+interface Sheet {
+  page: number;
+  info: PdfPageInfo;
+  fit: number;
+  width: number;
+  height: number;
+  element: HTMLElement;
+  canvas: HTMLCanvasElement;
+  /** The scale it is drawn at, and the latest drawing asked for. */
+  drawn: number;
+  drawing: AbortController | null;
+}
+
+function createSheet(page: number, info: PdfPageInfo, fit: number, part: number): Sheet {
+  const width = info.width * fit;
+  const height = info.height * fit;
   const element = document.createElement('div');
   element.className = 'pdf-sheet';
   element.dataset.ereaderPart = String(part);
-  element.style.width = `${box.width}px`;
-  element.style.height = `${box.height}px`;
+  element.style.width = `${width}px`;
+  element.style.height = `${height}px`;
   // The text layer is sized by this (pdf_viewer.css's variable), so it lines up with a page fitted smaller.
-  element.style.setProperty('--total-scale-factor', String(box.scale));
+  element.style.setProperty('--total-scale-factor', String(info.viewport.scale * fit));
   const canvas = document.createElement('canvas');
   canvas.className = 'pdf-page';
   element.append(canvas);
-  return { page, box, element, canvas, task: null, drawn: '' };
+  return { page, info, fit, width, height, element, canvas, drawn: 0, drawing: null };
 }
 
-/**
- * Renders a page at `scale` screen px per document px into a fresh canvas, swapped in when done (no blank
- * flash). Zoomed in, the page is drawn only as large as `maxPixels` allows (the rest is upscaled).
- */
-async function draw(sheet: Sheet, scale: number, maxPixels: number) {
-  const max = Math.sqrt(maxPixels / (sheet.box.width * sheet.box.height));
-  const viewport = sheet.page.getViewport({ scale: sheet.box.scale * Math.min(Math.max(scale, 0.1), max) });
-  const key = `${Math.floor(viewport.width)}x${Math.floor(viewport.height)}`;
-  if (key === sheet.drawn) return;
-  sheet.task?.cancel();
-  const target = document.createElement('canvas');
-  target.className = 'pdf-page';
-  target.width = Math.max(1, Math.floor(viewport.width));
-  target.height = Math.max(1, Math.floor(viewport.height));
-  const context = target.getContext('2d');
-  if (!context) return;
-  const current = sheet.page.render({ canvas: target, canvasContext: context, viewport });
-  sheet.task = current;
-  try {
-    await current.promise;
-  } catch (error) {
-    if ((error as Error)?.name === 'RenderingCancelledException') return;
-    throw error;
-  }
-  sheet.canvas.replaceWith(target);
-  sheet.canvas = target;
-  sheet.drawn = key;
+/** Shows a page's image (drawn at the size it is displayed at, so the browser never scales a huge bitmap down). */
+function paint(sheet: Sheet, image: ImageBitmap, scale: number) {
+  sheet.canvas.width = image.width;
+  sheet.canvas.height = image.height;
+  sheet.canvas.getContext('2d')?.drawImage(image, 0, 0);
+  image.close();
+  sheet.drawn = scale;
+}
+
+/** The scale to draw a page box of `width`×`height` CSS px at, shown `fit` screen px per CSS px, within `maxPixels`. */
+function drawScale(width: number, height: number, fit: number, maxPixels: number): number {
+  return CSS_PX_PER_PT * Math.min(Math.max(fit, 0.1), Math.sqrt(maxPixels / (width * height)));
+}
+
+/** This document's page box, from its viewport (written with the page's size), until the page itself is known. */
+function viewportBox(): { width: number; height: number } {
+  const content = document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content ?? '';
+  const size = (name: string) => Number(new RegExp(`${name}=(\\d+)`).exec(content)?.[1]) || 1000;
+  return { width: size('width'), height: size('height') };
 }
 
 async function renderPage() {
@@ -84,23 +149,41 @@ async function renderPage() {
   const pageNumber = Number(original.dataset.page);
   const source = new URL(original.dataset.source ?? '', location.href).href;
 
-  const lib = (await import(/* @vite-ignore */ new URL(PDFJS_MODULE, location.href).href)) as typeof PdfJs;
-  lib.GlobalWorkerOptions.workerSrc = new URL(PDFJS_WORKER, location.href).href;
-  const doc = await lib.getDocument({ url: source, ...pdfDocumentOptions() }).promise;
-  const page = await doc.getPage(pageNumber);
-  /** The page box in CSS px: the size of this document's viewport, and of each half of a spread. */
-  const box = page.getViewport({ scale: CSS_PX_PER_PT });
-  const rtl = (await doc.getViewerPreferences().catch(() => null))?.get('Direction') === 'R2L';
+  /** Screen px per CSS px of this document's page box, as the paginator fits it (two of them in a spread). */
+  const screenFit = (box: { width: number; height: number }) =>
+    Math.min(innerWidth / (box.width * (spreadMode() ? 2 : 1)), innerHeight / box.height) * devicePixelRatio * zoom();
 
-  const main = createSheet(page, box, 0);
+  const initial = viewportBox();
+  const firstScale = drawScale(initial.width, initial.height, screenFit(initial), MAX_PDF_PAGE_PIXELS / (spreadMode() === 'pair' ? 2 : 1));
+  const first = await book.page(source, pageNumber, firstScale, new AbortController().signal);
+  if (!first) throw new Error('The page is missing from the book');
+  const main = createSheet(pageNumber, first.info, 1, 0);
+  paint(main, first.image, firstScale);
   original.replaceWith(main.element);
+  /** The page box: this document's own page, and each half of a spread. */
+  const box = { width: main.width, height: main.height };
   /** The next page, while a spread shows it. */
   let next: Sheet | null = null;
 
+  /** Draws a sheet again at the scale it is now shown at, unless it already is. */
+  async function redrawSheet(sheet: Sheet, scale: number) {
+    if (sheet.drawn && Math.abs(scale - sheet.drawn) <= 0.01 * scale) return;
+    sheet.drawing?.abort();
+    const drawing = (sheet.drawing = new AbortController());
+    try {
+      const page = await book.page(source, sheet.page, scale, drawing.signal);
+      if (!page) return;
+      if (drawing.signal.aborted) return page.image.close();
+      paint(sheet, page.image, scale);
+    } catch (error) {
+      if (!drawing.signal.aborted && (error as Error)?.name !== 'RenderingCancelledException') throw error;
+    }
+  }
+
   function drawAll() {
     const sheets = next ? [main, next] : [main];
-    const scale = Math.min(innerWidth / (box.width * (spreadMode() ? 2 : 1)), innerHeight / box.height) * devicePixelRatio * zoom();
-    return Promise.all(sheets.map((sheet) => draw(sheet, scale, MAX_CANVAS_PIXELS / sheets.length)));
+    const fit = screenFit(box);
+    return Promise.all(sheets.map((sheet) => redrawSheet(sheet, drawScale(sheet.width, sheet.height, fit, MAX_PDF_PAGE_PIXELS / sheets.length) * sheet.fit)));
   }
 
   /**
@@ -109,29 +192,35 @@ async function renderPage() {
    */
   async function updateSpread() {
     const mode = spreadMode();
-    const on = mode === 'pair' && pageNumber < doc.numPages;
-    main.element.style.left = mode === 'pair' && rtl ? `${box.width}px` : '0';
+    const on = mode === 'pair' && pageNumber < book.count;
+    main.element.style.left = mode === 'pair' && book.rtl ? `${box.width}px` : '0';
     let added: Sheet | null = null;
     if (on && !next) {
-      const nextPage = await doc.getPage(pageNumber + 1);
-      const natural = nextPage.getViewport({ scale: CSS_PX_PER_PT });
-      // A page of another size is fitted into the same box, centered.
-      const fitted = nextPage.getViewport({ scale: CSS_PX_PER_PT * Math.min(box.width / natural.width, box.height / natural.height) });
-      added = next = createSheet(nextPage, fitted, 1);
-      next.element.style.left = `${(rtl ? 0 : box.width) + (box.width - fitted.width) / 2}px`;
-      next.element.style.top = `${(box.height - fitted.height) / 2}px`;
-      document.body.append(next.element);
+      const sheets = 2;
+      const scale = drawScale(box.width, box.height, screenFit(box), MAX_PDF_PAGE_PIXELS / sheets);
+      const page = await book.page(source, pageNumber + 1, scale, new AbortController().signal);
+      // The spread may have been turned off while the page was drawn.
+      if (page && spreadMode() === 'pair' && !next) {
+        // A page of another size is fitted into the same box, centered.
+        const fit = Math.min(box.width / page.info.width, box.height / page.info.height);
+        added = next = createSheet(pageNumber + 1, page.info, fit, 1);
+        // Drawn again below if fitting it made it smaller.
+        paint(next, page.image, scale);
+        next.element.style.left = `${(book.rtl ? 0 : box.width) + (box.width - next.width) / 2}px`;
+        next.element.style.top = `${(box.height - next.height) / 2}px`;
+        document.body.append(next.element);
+      } else page?.image.close();
     } else if (!on && next) {
-      next.task?.cancel();
+      next.drawing?.abort();
       next.element.remove();
       next = null;
     }
     await drawAll();
-    if (added) await addLayers(lib, doc, added);
+    if (added) await addLayers(added);
   }
 
-  await drawAll();
   root.dataset.pdfRendered = 'true';
+  root.dataset.pdfDrawer = book.drawer;
   const warn = (error: unknown) => console.warn('Re-rendering the PDF page failed:', error);
   const redraw = () => void drawAll().catch(warn);
   addEventListener('resize', redraw);
@@ -141,41 +230,36 @@ async function renderPage() {
   const onSpread = () => (spreadChange = spreadChange.then(updateSpread).catch(warn));
   addEventListener('ereader:spread', onSpread);
   if (spreadMode()) onSpread();
-  await addLayers(lib, doc, main);
+  // A page drawn at the scale of the page box read from the viewport is drawn again if that was not quite it.
+  redraw();
+  await addLayers(main);
 }
 
-async function addLayers(lib: typeof PdfJs, doc: PdfJs.PDFDocumentProxy, sheet: Sheet) {
-  await addTextLayer(lib, sheet);
-  await addLinks(lib, doc, sheet);
+async function addLayers(sheet: Sheet) {
+  await addTextLayer(sheet);
+  addLinks(sheet);
 }
 
-async function addTextLayer(lib: typeof PdfJs, { page, box, element }: Sheet) {
+async function addTextLayer({ info, fit, element }: Sheet) {
+  const lib = await loadLibrary();
   const layer = document.createElement('div');
   layer.className = 'textLayer';
   element.append(layer);
-  await new lib.TextLayer({ textContentSource: page.streamTextContent(), container: layer, viewport: box }).render();
+  // The TextLayer reads only these of the viewport; a plain copy came from the app.
+  const viewport = { ...info.viewport, scale: info.viewport.scale * fit } as unknown as PdfJs.PageViewport;
+  await new lib.TextLayer({ textContentSource: info.text, container: layer, viewport }).render();
 }
 
-async function addLinks(lib: typeof PdfJs, doc: PdfJs.PDFDocumentProxy, { page, box, element }: Sheet) {
+function addLinks({ info, fit, element }: Sheet) {
   const layer = document.createElement('div');
   layer.className = 'pdf-links';
-  for (const annotation of await page.getAnnotations({ intent: 'display' })) {
-    if (annotation.subtype !== 'Link' || !annotation.rect) continue;
-    let href: string | null = null;
-    if (typeof annotation.url === 'string') href = annotation.url;
-    else if (annotation.dest) {
-      const index = await destinationPage(doc, annotation.dest);
-      if (index !== null && index < doc.numPages) href = pagePath(index + 1);
-    }
-    if (!href) continue;
-    const [ax1, ay1, ax2, ay2] = annotation.rect as number[];
-    const [x1, y1, x2, y2] = lib.Util.normalizeRect([...box.convertToViewportPoint(ax1, ay1), ...box.convertToViewportPoint(ax2, ay2)]);
+  for (const { href, x, y, width, height } of info.links) {
     const link = document.createElement('a');
     link.href = href;
-    link.style.left = `${x1}px`;
-    link.style.top = `${y1}px`;
-    link.style.width = `${x2 - x1}px`;
-    link.style.height = `${y2 - y1}px`;
+    link.style.left = `${x * fit}px`;
+    link.style.top = `${y * fit}px`;
+    link.style.width = `${width * fit}px`;
+    link.style.height = `${height * fit}px`;
     layer.append(link);
   }
   if (layer.childElementCount > 0) element.append(layer);

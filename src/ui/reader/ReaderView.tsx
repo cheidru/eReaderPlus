@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { bookTexts, findInTexts, isSearchable } from '../../core/booksearch';
 import { DJVU_SOURCE, loadDjvuLibrary } from '../../core/djvu';
-import { DjvuPageStore, djvuMemoryBudget, openDjvuWorkers } from '../../core/djvu-pages';
+import { DjvuPageStore, openDjvuWorkers, pageMemoryBudget } from '../../core/djvu-pages';
 import { loadManifest } from '../../core/import';
 import { loadBookView, loadProgress, markOpened, overallProgress, saveBookView, saveProgress, type BookView } from '../../core/library';
 import { MESSAGE_TAG, parseFrameMessage, type DjvuPageData, type FixedSpread, type FrameSettings, type GotoTarget, type HostMessage } from '../../core/messages';
+import type { PdfPageData } from '../../core/pdf-common';
 import { splitFragment } from '../../core/paths';
+import { loadPdfLibrary, PDF_SOURCE } from '../../core/pdf';
+import { openPdfRenderer } from '../../core/pdf-common';
+import { PdfPageStore } from '../../core/pdf-pages';
 import { hasPageSpreads, spreadEnd, spreadFits, spreadStart } from '../../core/spread';
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP, type BookManifest, type Progress, type ReaderSettings, type TocItem } from '../../core/types';
 import { bookUrl, type Platform } from '../../platform';
@@ -75,6 +79,8 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
   const handHeld = useRef(false);
   /** DjVu: the open book, kept in memory and decoded ahead of the reader for the page documents. */
   const djvuPages = useRef<DjvuPageStore | null>(null);
+  /** PDF: the open book, kept in the app and drawn ahead of the reader for the page documents. */
+  const pdfPages = useRef<PdfPageStore | null>(null);
   const saveTimer = useRef<number | undefined>(undefined);
   const pendingSave = useRef<Progress | null>(null);
   const origin = platform.bookOrigin(bookId);
@@ -134,7 +140,7 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
     if (format !== 'djvu') return;
     const store = new DjvuPageStore(
       async () => openDjvuWorkers(await loadDjvuLibrary(), () => platform.readBinary(bookId, DJVU_SOURCE)),
-      djvuMemoryBudget(),
+      pageMemoryBudget(),
     );
     djvuPages.current = store;
     return () => {
@@ -142,6 +148,40 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
       if (djvuPages.current === store) djvuPages.current = null;
     };
   }, [platform, bookId, format]);
+
+  // PDF: open the book in the app once, to draw its pages ahead of the reader.
+  useEffect(() => {
+    if (format !== 'pdf') return;
+    const store = new PdfPageStore(
+      async () => openPdfRenderer(await loadPdfLibrary(), { data: await platform.readBinary(bookId, PDF_SOURCE) }),
+      pageMemoryBudget(),
+    );
+    pdfPages.current = store;
+    return () => {
+      store.close();
+      if (pdfPages.current === store) pdfPages.current = null;
+    };
+  }, [platform, bookId, format]);
+
+  /** Sends a PDF page document the page it asked for; a count of 0 tells it to draw its pages itself. */
+  const answerPdfPage = useCallback(
+    (page: number, scale: number) => {
+      const reply = (count: number, rtl: boolean, data: PdfPageData | null) => {
+        const message: HostMessage = { tag: MESSAGE_TAG, type: 'pdfPage', page, scale, count, rtl, data };
+        iframeRef.current?.contentWindow?.postMessage(message, origin);
+      };
+      const store = pdfPages.current;
+      if (!store) return reply(0, false, null);
+      Promise.all([store.book(), store.page(page, scale)]).then(
+        ([{ count, rtl }, data]) => reply(count, rtl, data),
+        (error: unknown) => {
+          console.warn(`PDF page ${page} could not be drawn in the app:`, error);
+          reply(0, false, null);
+        },
+      );
+    },
+    [origin],
+  );
 
   /** Sends a DjVu page document the page it asked for; a count of 0 tells it to decode the page itself. */
   const answerDjvuPage = useCallback(
@@ -344,11 +384,14 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
         case 'djvuPage':
           answerDjvuPage(message.page, message.full);
           break;
+        case 'pdfPage':
+          answerPdfPage(message.page, message.scale);
+          break;
       }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [origin, manifest, settings, changeSettings, frameSettings, post, platform, spineIndex, lastShown, navigate, navigateHref, panel, visualTurn, turn, handleKey, flushSave, answerDjvuPage]);
+  }, [origin, manifest, settings, changeSettings, frameSettings, post, platform, spineIndex, lastShown, navigate, navigateHref, panel, visualTurn, turn, handleKey, flushSave, answerDjvuPage, answerPdfPage]);
 
   // Push settings changes to the current document.
   useEffect(() => {
