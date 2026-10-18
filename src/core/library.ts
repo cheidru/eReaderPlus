@@ -27,6 +27,7 @@ const COLLECTIONS_KEY = 'collections';
 const SERIES_BACKFILL_KEY = 'series-backfill-done';
 const progressKey = (bookId: string) => `progress:${bookId}`;
 const viewKey = (bookId: string) => `view:${bookId}`;
+const textLengthsKey = (bookId: string) => `text-lengths:${bookId}`;
 
 /** How a book is laid out, chosen for each book: one page or two side by side, and the cover alone in two-page view. */
 export type BookView = Pick<ReaderSettings, 'spread' | 'spreadCover'>;
@@ -169,6 +170,7 @@ export async function removeBook(platform: Platform, bookId: string): Promise<vo
   await updateLibrary(platform, (entries) => [entries.filter((e) => e.id !== bookId), undefined]);
   await platform.kvSet(progressKey(bookId), null);
   await platform.kvSet(viewKey(bookId), null);
+  await platform.kvSet(textLengthsKey(bookId), null);
   await platform.deleteBook(bookId);
 }
 
@@ -197,6 +199,16 @@ export async function loadBookView(platform: Platform, bookId: string): Promise<
 
 export async function saveBookView(platform: Platform, bookId: string, view: BookView): Promise<void> {
   await platform.kvSet(viewKey(bookId), view);
+}
+
+/** The text length of each spine document (pagecount.ts), or null before it was first read. */
+export async function loadTextLengths(platform: Platform, bookId: string): Promise<number[] | null> {
+  const lengths = await platform.kvGet<unknown>(textLengthsKey(bookId));
+  return Array.isArray(lengths) && lengths.every((n) => typeof n === 'number' && n >= 0) ? (lengths as number[]) : null;
+}
+
+export async function saveTextLengths(platform: Platform, bookId: string, lengths: number[]): Promise<void> {
+  await platform.kvSet(textLengthsKey(bookId), lengths);
 }
 
 export async function loadSettings(platform: Platform): Promise<ReaderSettings> {
