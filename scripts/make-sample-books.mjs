@@ -3,6 +3,7 @@
 //   hostile.epub     — a book whose scripts try to escape the sandbox
 //   sample.fb2       — FictionBook 2 with notes
 //   sample.cbz       — comic archive with generated PNG pages
+//   sample.md        — Markdown with front matter, a table, code, and an image beside it (md-images/)
 //   sample.mobi, .azw3, .djvu, .pdf, .chm, .lit — copies of test/fixtures/books/ (see scripts/make-test-fixtures.mjs)
 import { strToU8, zipSync } from 'fflate';
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
@@ -260,6 +261,43 @@ const comic = {};
 colors.forEach((c, i) => (comic[`pages/page${i + 1}.png`] = new Uint8Array(png(400, 600, c))));
 comic['ComicInfo.xml'] = strToU8('<ComicInfo><Series>Sample Comic</Series><Number>1</Number><Writer>eReaderPlus</Writer></ComicInfo>');
 await writeFile(`${out}/sample.cbz`, zipSync(comic));
+
+await mkdir(`${out}/md-images`, { recursive: true });
+await writeFile(`${out}/md-images/dot.png`, png(60, 40, [40, 120, 200]));
+const fence = '```';
+await writeFile(
+  `${out}/sample.md`,
+  `---
+title: Markdown Sample
+author: eReaderPlus
+lang: en
+---
+
+# Markdown Sample
+
+An image from beside the file: ![a blue dot](md-images/dot.png)
+
+## Tables and code
+
+| Format | Kind  |
+|--------|-------|
+| CBZ    | comic |
+| MD     | text  |
+
+${fence}js
+console.log('code block');
+${fence}
+
+## Second part
+
+${lorem.repeat(30)}
+
+- [x] done
+- [ ] to do
+
+See [the tables](#tables-and-code).
+`,
+);
 
 for (const name of ['sample.mobi', 'sample.azw3', 'sample.djvu', 'sample.pdf', 'sample.chm', 'sample.lit']) await copyFile(`test/fixtures/books/${name}`, `${out}/${name}`);
 

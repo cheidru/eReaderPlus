@@ -482,7 +482,7 @@ function EmptyState({ entries, location, filtered, platform, onAdd }: { entries:
         <Icon name="book" className="library-empty-icon" />
         <p>No books yet.</p>
         <p className="library-hint">
-          Open an EPUB, PDF, MOBI, AZW3, FB2, CBZ, DjVu, CHM or LIT file{platform.kind === 'electron' ? ', or drop one onto this window' : ''}.
+          Open an EPUB, PDF, MOBI, AZW3, FB2, CBZ, DjVu, CHM, LIT or Markdown file{platform.kind === 'electron' ? ', or drop one onto this window' : ''}.
         </p>
         <button type="button" className="button" onClick={onAdd}>
           Open book

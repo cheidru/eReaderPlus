@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { isInside, saveWatchedFolders, scanWatchedFolders, SCAN_EXTENSIONS, withFolder } from '../src/core/folders';
+import { isInside, saveWatchedFolders, scanWatchedFolders, SCAN_EXTENSIONS, WATCHED_EXTENSIONS, withFolder } from '../src/core/folders';
 import type { FoundBookFile, Platform } from '../src/platform/platform';
 
 const addBook = vi.fn();
@@ -12,7 +12,7 @@ function fakePlatform(files: Record<string, FoundBookFile[]>): Platform {
     kvGet: async (key: string) => (kv.has(key) ? structuredClone(kv.get(key)) : null),
     kvSet: async (key: string, value: unknown) => void kv.set(key, structuredClone(value)),
     findBookFiles: async (folder: string, extensions: string[]) => {
-      expect(extensions).toEqual(SCAN_EXTENSIONS);
+      expect(extensions).toEqual(WATCHED_EXTENSIONS);
       return files[folder] ?? [];
     },
   } as unknown as Platform;
@@ -116,5 +116,11 @@ describe('choosing folders', () => {
   it('does not scan plain zip archives', () => {
     expect(SCAN_EXTENSIONS).not.toContain('zip');
     expect(SCAN_EXTENSIONS).toEqual(expect.arrayContaining(['epub', 'pdf', 'fb2', 'cbz', 'djvu']));
+  });
+
+  it('lists Markdown files in the folder browser, but does not import them in scans', () => {
+    expect(SCAN_EXTENSIONS).toEqual(expect.arrayContaining(['md', 'markdown']));
+    expect(WATCHED_EXTENSIONS).not.toContain('md');
+    expect(WATCHED_EXTENSIONS).toEqual(SCAN_EXTENSIONS.filter((ext) => ext !== 'md' && ext !== 'markdown'));
   });
 });

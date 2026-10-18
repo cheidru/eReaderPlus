@@ -47,6 +47,10 @@ fileAssociations:
     name: Microsoft Reader book
     mimeType: application/x-ms-reader
     role: Viewer
+  - ext: [md, markdown]
+    name: Markdown document
+    mimeType: text/markdown
+    role: Viewer
 win:
   target: nsis
   # A fixed name keeps https://github.com/cheidru/eReaderPlus/releases/latest/download/eReaderPlus-Setup.exe

@@ -177,6 +177,8 @@ const EXTENSION_FORMATS: Record<string, BookFormat[]> = {
   pdf: ['pdf'],
   chm: ['chm'],
   lit: ['lit'],
+  md: ['md'],
+  markdown: ['md'],
 };
 
 /** Of these file extensions, the ones whose books the format selection shows. */

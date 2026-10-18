@@ -27,6 +27,8 @@ export function createElectronPlatform(api: ElectronNativeApi): Platform {
     },
     extractArchive: (file, bookId) => api.extractArchive(file.ref, bookId),
     copyRawFile: (file, bookId, path) => api.copyRawFile(file.ref, bookId, path),
+    // A file's ref is its path on desktop; Windows takes '/' as a separator too.
+    siblingFile: (file, relative) => toRef(file.ref.slice(0, Math.max(file.ref.lastIndexOf('/'), file.ref.lastIndexOf('\\')) + 1) + relative),
     readText: api.readText,
     readBinary: api.readBinary,
     writeText: api.writeText,

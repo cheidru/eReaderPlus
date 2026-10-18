@@ -729,6 +729,32 @@ async function frameWithText(page, text) {
   await app.close();
 }
 {
+  const { app, page } = await launch('sample.md');
+  const doc = await frameWithText(page, 'An image from beside the file');
+  const title = await page.locator('.reader-title').textContent();
+  const content = await doc.evaluate(async () => {
+    const img = document.querySelector('img');
+    await img.decode();
+    return { image: img.naturalWidth, cells: document.querySelectorAll('td').length, code: document.querySelector('pre code')?.textContent.trim() };
+  });
+  await page.screenshot({ path: path.join(shots, '14b-markdown.png') });
+  check('Markdown opens with its front matter title, tables, code and the image beside the file', () => {
+    assert.equal(title, 'Markdown Sample');
+    assert.deepEqual(content, { image: 60, cells: 4, code: "console.log('code block');" });
+  });
+  await page.getByRole('button', { name: 'Contents' }).click();
+  await page.getByRole('button', { name: 'Second part' }).click();
+  await page.waitForTimeout(400);
+  const atSecond = await doc.evaluate(() => {
+    const { left } = document.getElementById('second-part').getBoundingClientRect();
+    return { left, width: innerWidth, page: Math.round(scrollX / innerWidth) };
+  });
+  check('Markdown headings are the contents, and navigate', () => {
+    assert.ok(atSecond.left >= 0 && atSecond.left < atSecond.width && atSecond.page > 0, JSON.stringify(atSecond));
+  });
+  await app.close();
+}
+{
   const { app, page } = await launch('sample.lit');
   const chapter1 = await frameWithText(page, 'See the note');
   const image = await chapter1.evaluate(async () => {
@@ -776,7 +802,7 @@ async function frameWithText(page, text) {
   await page.locator('.book-card').first().waitFor();
   const allAgain = await titles();
   check('Formats lists every format, and the formats ticked there apply to the shelves', () => {
-    assert.equal(formatRows, 10); // "All formats" and the nine formats.
+    assert.equal(formatRows, 11); // "All formats" and the ten formats.
     assert.ok(!withoutEpub.includes('Modern Web Sample') && withoutEpub.includes('PDF Sample'), JSON.stringify(withoutEpub));
     assert.ok(allAgain.includes('Modern Web Sample'), JSON.stringify(allAgain));
   });

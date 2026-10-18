@@ -44,6 +44,8 @@
                 <data android:mimeType="application/vnd.ms-htmlhelp" />
                 <data android:mimeType="application/x-chm" />
                 <data android:mimeType="application/x-ms-reader" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="text/x-markdown" />
             </intent-filter>
 
         </activity>

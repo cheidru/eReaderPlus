@@ -7,16 +7,23 @@
 import type { FileRef, Platform } from '../platform/platform';
 import { SUPPORTED_EXTENSIONS, type ImportPreview } from './import';
 import { addBook } from './library';
+import { MARKDOWN_EXTENSIONS } from './markdown';
 import type { LibraryEntry } from './types';
 
 const FOLDERS_KEY = 'watched-folders';
 const SEEN_KEY = 'watched-files';
 
 /**
- * What scans look for. Plain .zip is left out: a generic archive is rarely a book, and finding out means
- * copying and unpacking it. Opening one by hand still works.
+ * What the folder browser lists and scans look for. Plain .zip is left out: a generic archive is rarely a book, and
+ * finding out means copying and unpacking it. Opening one by hand still works.
  */
 export const SCAN_EXTENSIONS = SUPPORTED_EXTENSIONS.filter((ext) => ext !== 'zip');
+
+/**
+ * What scans of watched folders import: not Markdown, as folders are full of read-me and note files that are not
+ * books. The folder browser lists Markdown files, to open by hand.
+ */
+export const WATCHED_EXTENSIONS = SCAN_EXTENSIONS.filter((ext) => !MARKDOWN_EXTENSIONS.includes(ext));
 
 interface SeenFile {
   size: number;
@@ -87,7 +94,7 @@ async function scan(platform: Platform, { onProgress = () => {}, onImporting, on
   const seen = (await platform.kvGet<Record<string, SeenFile>>(SEEN_KEY)) ?? {};
   const files = new Map<string, { file: FileRef; size: number; modified: number }>();
   for (const folder of folders) {
-    for (const found of await platform.findBookFiles(folder, SCAN_EXTENSIONS)) files.set(found.path, found);
+    for (const found of await platform.findBookFiles(folder, WATCHED_EXTENSIONS)) files.set(found.path, found);
   }
 
   const todo = [...files].filter(([path, f]) => seen[path]?.size !== f.size || seen[path]?.modified !== f.modified);

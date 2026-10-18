@@ -6,12 +6,13 @@ import { DJVU_SOURCE, importDjvu, loadDjvuLibrary } from './djvu';
 import { importEpub, isEpubContainer, type ParsedBook } from './epub';
 import { importFb2 } from './fb2';
 import { importLit } from './lit';
+import { importMarkdown, MARKDOWN_EXTENSIONS, MARKDOWN_SOURCE, markdownFiles } from './markdown';
 import { importMobi } from './mobi';
 import { importPdf, loadPdfLibrary, PDF_SOURCE } from './pdf';
 import { extension } from './paths';
 import { MANIFEST_PATH, type BookFormat, type BookManifest, type BookPreview, type OnPreview } from './types';
 
-export const SUPPORTED_EXTENSIONS = ['epub', 'kepub', 'fb2', 'fbz', 'cbz', 'zip', 'mobi', 'azw', 'azw3', 'djvu', 'djv', 'pdf', 'chm', 'lit'];
+export const SUPPORTED_EXTENSIONS = ['epub', 'kepub', 'fb2', 'fbz', 'cbz', 'zip', 'mobi', 'azw', 'azw3', 'djvu', 'djv', 'pdf', 'chm', 'lit', ...MARKDOWN_EXTENSIONS];
 const MOBI_EXTENSIONS = ['mobi', 'azw', 'azw3'];
 const DJVU_EXTENSIONS = ['djvu', 'djv'];
 
@@ -70,6 +71,19 @@ async function convert(platform: Platform, file: FileRef, id: string, onPreview?
     await platform.copyRawFile(file, id, 'source.lit');
     return { format: 'lit', parsed: await importLit(platformBookFs(platform, id, ['source.lit']), 'source.lit', file.name) };
   }
+  if (MARKDOWN_EXTENSIONS.includes(ext)) {
+    await platform.copyRawFile(file, id, MARKDOWN_SOURCE);
+    const { siblingFile } = platform;
+    // Images beside the file, where the platform can reach them; never over the book's own files.
+    const copyResource =
+      siblingFile &&
+      (async (path: string) => {
+        const source = path.startsWith('.') || path.startsWith(MARKDOWN_SOURCE) ? null : siblingFile(file, path);
+        if (source) await platform.copyRawFile(source, id, path);
+      });
+    const parsed = await importMarkdown(platformBookFs(platform, id, [MARKDOWN_SOURCE]), [MARKDOWN_SOURCE], file.name, onPreview, copyResource);
+    return { format: 'md', parsed };
+  }
 
   let files: string[];
   try {
@@ -82,6 +96,9 @@ async function convert(platform: Platform, file: FileRef, id: string, onPreview?
   if (isEpubContainer(files)) return { format: 'epub', parsed: await importEpub(fs, onPreview) };
   const fb2 = files.find((f) => extension(f) === 'fb2');
   if (fb2) return { format: 'fb2', parsed: await importFb2(fs, fb2, onPreview) };
+  // Markdown with its images; a comic archive with a stray read-me stays a comic.
+  const markdown = ext === 'cbz' ? [] : markdownFiles(files);
+  if (markdown.length > 0) return { format: 'md', parsed: await importMarkdown(fs, markdown, file.name, onPreview) };
   if (comicImages(files).length > 0) return { format: 'cbz', parsed: await importCbz(fs, file.name, onPreview) };
   throw new Error(`Unsupported book format: ${file.name}`);
 }

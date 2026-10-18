@@ -9,7 +9,7 @@ import { APP_ORIGIN, registerProtocols, registerSchemes } from './protocols';
 import { hardenAllWebContents, hardenSession, isAppUrl } from './security';
 import { initAutoUpdate, installUpdate, readyUpdate } from './updater';
 
-const BOOK_EXTENSIONS = ['epub', 'kepub', 'fb2', 'fbz', 'cbz', 'zip', 'mobi', 'azw', 'azw3', 'djvu', 'djv', 'pdf', 'chm', 'lit'];
+const BOOK_EXTENSIONS = ['epub', 'kepub', 'fb2', 'fbz', 'cbz', 'zip', 'mobi', 'azw', 'azw3', 'djvu', 'djv', 'pdf', 'chm', 'lit', 'md', 'markdown'];
 const devUrl = process.env.ELECTRON_RENDERER_URL ?? null;
 const devOrigin = devUrl ? new URL(devUrl).origin : null;
 

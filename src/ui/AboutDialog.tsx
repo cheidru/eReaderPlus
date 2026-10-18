@@ -40,7 +40,7 @@ export function AboutDialog({ engine, onClose }: Props) {
         DjVu pages are decoded by DjVu.js (Dmitry Kulikov, GNU GPL 2 or later) and PDF pages by pdf.js (Mozilla, Apache
         License 2.0). CHM files are read with chmlib-ts (GNU LGPL 2.1). The LIT reader is ported from Calibre (Kovid
         Goyal and Marshall T. Vandegrift, GNU GPL 3). MOBI and AZW3 parsing is adapted from foliate-js (John Factotum,
-        MIT License).
+        MIT License). Markdown is converted with marked (MIT License).
       </p>
     </Dialog>
   );

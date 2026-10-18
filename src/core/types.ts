@@ -1,5 +1,5 @@
 /** 'mobi' is MOBI 6 (also old AZW), 'azw3' is KF8 (also the KF8 half of combined MOBI files). */
-export type BookFormat = 'epub' | 'fb2' | 'cbz' | 'mobi' | 'azw3' | 'djvu' | 'pdf' | 'chm' | 'lit';
+export type BookFormat = 'epub' | 'fb2' | 'cbz' | 'mobi' | 'azw3' | 'djvu' | 'pdf' | 'chm' | 'lit' | 'md';
 
 export interface TocItem {
   label: string;
@@ -134,7 +134,7 @@ export const DEFAULT_LIBRARY_PREFS: LibraryPrefs = {
   filter: { formats: [], hideFinished: false },
 };
 
-export const ALL_FORMATS: BookFormat[] = ['epub', 'pdf', 'fb2', 'mobi', 'azw3', 'djvu', 'cbz', 'chm', 'lit'];
+export const ALL_FORMATS: BookFormat[] = ['epub', 'pdf', 'fb2', 'mobi', 'azw3', 'djvu', 'cbz', 'chm', 'lit', 'md'];
 
 export type Theme = 'light' | 'sepia' | 'dark';
 export type Flow = 'paginated' | 'scrolled';

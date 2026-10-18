@@ -62,6 +62,11 @@ export interface Platform {
   /** Unzips an archive into the book's folder natively. Returns the extracted file paths. */
   extractArchive(file: FileRef, bookId: string): Promise<string[]>;
   copyRawFile(file: FileRef, bookId: string, path: string): Promise<void>;
+  /**
+   * The file at `relative` (a POSIX path) from the folder of `file`, where the platform can reach it: desktop. Android
+   * opens single files through content URIs, which give no access to the files beside them.
+   */
+  siblingFile?(file: FileRef, relative: string): FileRef;
   readText(bookId: string, path: string): Promise<string>;
   readBinary(bookId: string, path: string): Promise<Uint8Array>;
   writeText(bookId: string, path: string, text: string): Promise<void>;
