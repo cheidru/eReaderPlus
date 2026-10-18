@@ -51,6 +51,15 @@ export interface FrameSettings {
   fixedSpread: FixedSpread | null;
 }
 
+/** A turn of the mouse wheel (or a touchpad scroll): how far, with Ctrl held or not, and where (client px). */
+export interface WheelTurn {
+  deltaX: number;
+  deltaY: number;
+  ctrlKey: boolean;
+  x: number;
+  y: number;
+}
+
 /** Where to go after a document loads or on request. */
 export type GotoTarget =
   | { kind: 'fraction'; value: number }
@@ -75,6 +84,8 @@ export type HostMessage =
   | { tag: typeof MESSAGE_TAG; type: 'hand'; on: boolean }
   /** Whether the document is on screen, or loaded ahead of the reader in a frame out of sight (where its media waits). */
   | { tag: typeof MESSAGE_TAG; type: 'shown'; shown: boolean }
+  /** A wheel turn that a document out of sight passed on (`passWheel`), for the one on screen to act on as its own. */
+  | { tag: typeof MESSAGE_TAG; type: 'wheel'; wheel: WheelTurn }
   /**
    * DjVu: the answer to a page document's `djvuPage` request. `count` is the book's page count, or 0 when the app
    * can't decode the book (the page document then decodes the page itself); `data` is null past the last page.
@@ -94,7 +105,13 @@ export type FrameMessage =
   | { type: 'tap'; x: number; y: number }
   | { type: 'swipe'; dir: 1 | -1 }
   | { type: 'key'; key: string }
-  | { type: 'wheel'; delta: number }
+  /** The wheel turns the page; `passed`: a turn that the app passed on from another document (`passWheel`). */
+  | { type: 'wheel'; delta: number; passed: boolean }
+  /**
+   * A document out of sight got a wheel turn: Chromium sends the rest of a spin to the frame it began over, even once
+   * the page turned into the next document, so the app passes it on to the document on screen.
+   */
+  | ({ type: 'passWheel' } & WheelTurn)
   /** Fixed layout: the reader zoomed or panned the page. */
   | { type: 'zoom'; zoom: number; panX: number }
   /** Reflowable: Ctrl+wheel or pinch asks for a larger (1) or smaller (-1) font. */
@@ -146,7 +163,10 @@ export function parseFrameMessage(data: unknown): FrameMessage | null {
     case 'key':
       return typeof m.key === 'string' && KEYS.has(m.key) ? { type: 'key', key: m.key } : null;
     case 'wheel':
-      return isNum(m.delta) ? { type: 'wheel', delta: m.delta } : null;
+      return isNum(m.delta) ? { type: 'wheel', delta: m.delta, passed: m.passed === true } : null;
+    case 'passWheel':
+      if (!isNum(m.deltaX) || !isNum(m.deltaY) || !isNum(m.x) || !isNum(m.y)) return null;
+      return { type: 'passWheel', deltaX: m.deltaX, deltaY: m.deltaY, ctrlKey: m.ctrlKey === true, x: m.x, y: m.y };
     case 'zoom':
       if (!isNum(m.zoom) || !isNum(m.panX)) return null;
       return { type: 'zoom', zoom: Math.min(MAX_ZOOM, Math.max(1, m.zoom)), panX: Math.min(1, Math.max(0, m.panX)) };

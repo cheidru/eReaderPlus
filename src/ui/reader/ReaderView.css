@@ -75,6 +75,15 @@
   pointer-events: none;
 }
 
+/*
+ * The frame out of sight that a spin of the mouse wheel still goes to (it began there, before the page turned into the
+ * next document). Chromium hardly draws a fully transparent frame, which holds up its wheel events for up to a second,
+ * so it is drawn barely there instead: at the lowest opacity above none, it changes no pixel by more than one shade.
+ */
+.reader-frame-spun {
+  opacity: calc(1 / 255);
+}
+
 /* Lets a dark book page show through transparently instead of on a white canvas. */
 .reader[data-theme='dark'] .reader-frame {
   color-scheme: dark;

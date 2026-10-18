@@ -5,8 +5,12 @@
  * iframe reloads it).
  */
 
-/** The document shown, the next one and the previous one. */
-export const FRAME_SLOTS = 3;
+/**
+ * The document shown, the next one and the previous one, and one more for the frame a spin of the mouse wheel began
+ * over: Chromium sends the rest of the spin to that frame, also once it is out of sight, and drops it if the frame
+ * loads another document, so the frame keeps its document until the spin ends.
+ */
+export const FRAME_SLOTS = 4;
 
 /** The spine documents to keep loaded, most wanted first: the one shown, then the next and the previous one. */
 export function wantedDocuments(current: number, next: number, previous: number, count: number): number[] {
@@ -15,17 +19,17 @@ export function wantedDocuments(current: number, next: number, previous: number,
 
 /**
  * Gives each wanted document a slot, keeping the documents already loaded where they are. A wanted document goes
- * into an empty slot, or else the slot of a document no longer wanted; the `kept` slot (the frame still on screen
- * while the next one loads) is never taken. Returns `slots` itself when nothing changes.
+ * into an empty slot, or else the slot of a document no longer wanted; the `kept` slots (the frame still on screen
+ * while the next one loads, the frame a wheel spin goes to) are never taken. Returns `slots` itself when nothing changes.
  */
-export function assignSlots(slots: readonly (number | null)[], wanted: readonly number[], kept: number | null): readonly (number | null)[] {
+export function assignSlots(slots: readonly (number | null)[], wanted: readonly number[], kept: readonly number[]): readonly (number | null)[] {
   let next: (number | null)[] | null = null;
   for (const index of wanted) {
     if ((next ?? slots).includes(index)) continue;
     const current = next ?? slots;
     let free = current.indexOf(null);
-    if (free < 0) free = current.findIndex((held, slot) => slot !== kept && !wanted.includes(held!));
-    if (free < 0 || free === kept) continue;
+    if (free < 0) free = current.findIndex((held, slot) => !kept.includes(slot) && !wanted.includes(held!));
+    if (free < 0 || kept.includes(free)) continue;
     next ??= [...slots];
     next[free] = index;
   }

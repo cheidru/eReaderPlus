@@ -55,6 +55,8 @@ interface FrameState {
 const NO_FRAME: FrameState = { index: null, target: { kind: 'fraction', value: 0 }, ready: false, shown: false };
 
 const WHEEL_THROTTLE_MS = 250;
+/** A wheel spin goes on to the frame it began over until the wheel rests this long (a little longer than Chromium waits). */
+const WHEEL_SPIN_MS = 1000;
 /** Search waits until typing pauses this long. */
 const SEARCH_DELAY_MS = 300;
 /** A page that takes longer than this to show gets the galaxy spinner; quicker ones don't flash it. */
@@ -91,6 +93,11 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
   const spineIndexRef = useRef(0);
   const framesBox = useRef<HTMLDivElement>(null);
   const lastWheel = useRef(0);
+  /** The frame the last wheel turn went to, and when: it keeps its document while the spin goes on (frames.ts). */
+  const wheelFrame = useRef({ slot: -1, time: 0 });
+  /** The frame out of sight that a wheel spin still goes to, drawn so its wheel events aren't held up (ReaderView.css). */
+  const [spinSlot, setSpinSlot] = useState<number | null>(null);
+  const spinTimer = useRef<number | undefined>(undefined);
   /** Fixed layout: the zoom the reader chose, carried over to the pages that follow. */
   const fixedZoom = useRef({ zoom: 1, panX: 0.5 });
   /** Whether Space, pressed while the app had the focus, holds the hand tool on a zoomed page. */
@@ -133,7 +140,9 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
    */
   const loadDocuments = useCallback((documents: { index: number; target: GotoTarget }[]) => {
     const before = slotsRef.current;
-    const after = assignSlots(before, documents.map((d) => d.index), visibleSlotRef.current);
+    const kept = [visibleSlotRef.current ?? -1];
+    if (Date.now() - wheelFrame.current.time < WHEEL_SPIN_MS) kept.push(wheelFrame.current.slot);
+    const after = assignSlots(before, documents.map((d) => d.index), kept);
     if (after === before) return before;
     after.forEach((index, slot) => {
       if (index === before[slot] || index === null) return;
@@ -152,16 +161,26 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
     [origin],
   );
 
+  /** Keeps frame `slot` drawn while the wheel spin going to it goes on. */
+  const holdSpin = useCallback((slot: number) => {
+    setSpinSlot(slot);
+    window.clearTimeout(spinTimer.current);
+    spinTimer.current = window.setTimeout(() => setSpinSlot(null), WHEEL_SPIN_MS);
+  }, []);
+
   /** Puts frame `slot` on screen, and the one there before out of sight. */
   const showSlot = useCallback(
     (slot: number) => {
       const before = visibleSlotRef.current;
-      if (before !== null && before !== slot) postTo(before, { tag: MESSAGE_TAG, type: 'shown', shown: false });
+      if (before !== null && before !== slot) {
+        postTo(before, { tag: MESSAGE_TAG, type: 'shown', shown: false });
+        if (wheelFrame.current.slot === before && Date.now() - wheelFrame.current.time < WHEEL_SPIN_MS) holdSpin(before);
+      }
       postTo(slot, { tag: MESSAGE_TAG, type: 'shown', shown: true });
       visibleSlotRef.current = slot;
       setVisibleSlot(slot);
     },
-    [postTo],
+    [postTo, holdSpin],
   );
 
   useEffect(() => {
@@ -458,9 +477,17 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
           break;
         case 'wheel': {
           const now = Date.now();
+          if (!message.passed) wheelFrame.current = { slot, time: now };
           if (now - lastWheel.current < WHEEL_THROTTLE_MS || Math.abs(message.delta) < 4) break;
           lastWheel.current = now;
           turn(message.delta > 0 ? 1 : -1);
+          break;
+        }
+        case 'passWheel': {
+          wheelFrame.current = { slot, time: Date.now() };
+          holdSpin(slot);
+          const { type: _, ...wheel } = message;
+          if (!current) post({ tag: MESSAGE_TAG, type: 'wheel', wheel });
           break;
         }
         case 'zoom':
@@ -489,7 +516,7 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [origin, manifest, settings, changeSettings, frameSettings, postTo, showSlot, platform, lastShown, navigate, navigateHref, panel, visualTurn, turn, handleKey, flushSave, answerDjvuPage, answerPdfPage]);
+  }, [origin, manifest, settings, changeSettings, frameSettings, postTo, showSlot, holdSpin, platform, lastShown, navigate, navigateHref, panel, visualTurn, turn, handleKey, flushSave, answerDjvuPage, answerPdfPage]);
 
   // Push settings changes to every loaded document.
   useEffect(() => {
@@ -616,7 +643,7 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
               ref={(element) => {
                 frameElements.current[slot] = element;
               }}
-              className={slot === visibleSlot ? 'reader-frame' : 'reader-frame reader-frame-hidden'}
+              className={slot === visibleSlot ? 'reader-frame' : slot === spinSlot ? 'reader-frame reader-frame-hidden reader-frame-spun' : 'reader-frame reader-frame-hidden'}
               // Out of sight, out of reach: no focus, input or screen reader goes into a frame loaded ahead.
               inert={slot !== visibleSlot}
               title={manifest.title}

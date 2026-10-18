@@ -19,6 +19,14 @@ describe('parseFrameMessage', () => {
     expect(parseFrameMessage({ tag: 'ereader', type: 'djvuPage', page: 3 })).toEqual({ type: 'djvuPage', page: 3, full: false });
     expect(parseFrameMessage({ tag: 'ereader', type: 'djvuPage', page: 3, full: true })).toEqual({ type: 'djvuPage', page: 3, full: true });
     expect(parseFrameMessage({ tag: 'ereader', type: 'pdfPage', page: 2, scale: 2.5 })).toEqual({ type: 'pdfPage', page: 2, scale: 2.5 });
+    expect(parseFrameMessage({ tag: 'ereader', type: 'passWheel', deltaX: 0, deltaY: 100, ctrlKey: 1, x: 5, y: 6, extra: 1 })).toEqual({
+      type: 'passWheel',
+      deltaX: 0,
+      deltaY: 100,
+      ctrlKey: false,
+      x: 5,
+      y: 6,
+    });
   });
 
   it('rejects malformed or dangerous messages', () => {
@@ -37,5 +45,6 @@ describe('parseFrameMessage', () => {
     expect(parseFrameMessage({ tag: 'ereader', type: 'pdfPage', page: 0, scale: 1 })).toBeNull();
     expect(parseFrameMessage({ tag: 'ereader', type: 'pdfPage', page: 1, scale: 0 })).toBeNull();
     expect(parseFrameMessage({ tag: 'ereader', type: 'pdfPage', page: 1, scale: Number.POSITIVE_INFINITY })).toBeNull();
+    expect(parseFrameMessage({ tag: 'ereader', type: 'passWheel', deltaX: 0, deltaY: '100', x: 0, y: 0 })).toBeNull();
   });
 });

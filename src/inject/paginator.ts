@@ -3,7 +3,7 @@
  * Lays the document out as pages with CSS multi-column, and talks to the app only via postMessage.
  * It has no privileges: anything it does, the book's own scripts could do too.
  */
-import { MAX_ZOOM, MESSAGE_TAG, type FrameMessage, type FrameSettings, type GotoTarget, type HostMessage } from '../core/messages';
+import { MAX_ZOOM, MESSAGE_TAG, type FrameMessage, type FrameSettings, type GotoTarget, type HostMessage, type WheelTurn } from '../core/messages';
 import { spreadFits } from '../core/spread';
 import { findRange } from '../core/textsearch';
 
@@ -438,6 +438,7 @@ import { findRange } from '../core/textsearch';
     else if (data.type === 'zoom' && Number.isFinite(data.zoom) && Number.isFinite(data.panX)) setFixedZoom(data.zoom, data.panX);
     else if (data.type === 'hand') setHand(data.on === true);
     else if (data.type === 'shown') setShown(data.shown === true);
+    else if (data.type === 'wheel' && settings && shown) onWheel(data.wheel, performance.now(), true);
   });
 
   // --- Layout tracking -------------------------------------------------------------------------
@@ -514,42 +515,60 @@ import { findRange } from '../core/textsearch';
   let lastTextZoom = -Infinity;
 
   /** Ctrl+wheel on reflowable text (also a touchpad pinch, which Chromium reports as one) changes the font size. */
-  function wheelTextZoom(event: WheelEvent) {
-    if (event.timeStamp - lastTextZoom > 500) textZoomDelta = 0;
-    lastTextZoom = event.timeStamp;
-    textZoomDelta += event.deltaY;
+  function wheelTextZoom(deltaY: number, time: number) {
+    if (time - lastTextZoom > 500) textZoomDelta = 0;
+    lastTextZoom = time;
+    textZoomDelta += deltaY;
     if (Math.abs(textZoomDelta) < 50) return;
     post({ type: 'textzoom', dir: textZoomDelta < 0 ? 1 : -1 });
     textZoomDelta = 0;
+  }
+
+  /**
+   * Acts on a turn of the wheel: this document's own (`passed` false), or one a document out of sight passed on.
+   * Returns false when it is left to scroll the document natively.
+   */
+  function onWheel(wheel: WheelTurn, time: number, passed: boolean): boolean {
+    const m = mode();
+    if (wheel.ctrlKey) {
+      if (m === 'fixed') zoomFixed(Math.exp(-wheel.deltaY * 0.0025), wheel.x, wheel.y);
+      else wheelTextZoom(wheel.deltaY, time);
+      return true;
+    }
+    const newGesture = time - lastWheel > EDGE_PAUSE_MS;
+    lastWheel = time;
+    if (m === 'scrolled') {
+      // Scrolls natively; past the end (start) of the chapter, moves on to the next (previous) one.
+      if (wheel.deltaY === 0) return false;
+      const el = scroller();
+      const atEdge = wheel.deltaY > 0 ? el.scrollTop + window.innerHeight >= el.scrollHeight - 2 : el.scrollTop <= 0;
+      if (!atEdge) {
+        if (!passed) return false;
+        window.scrollBy({ top: wheel.deltaY, behavior: 'instant' });
+        return true;
+      }
+      if (newGesture) post({ type: 'wheel', delta: wheel.deltaY, passed });
+      return true;
+    }
+    // A zoomed page scrolls first (Shift+wheel or a touchpad: sideways).
+    if (m === 'fixed' && fixed.zoom > 1 && (panFixed(-wheel.deltaX, -wheel.deltaY) || !newGesture)) return true;
+    post({ type: 'wheel', delta: Math.abs(wheel.deltaY) >= Math.abs(wheel.deltaX) ? wheel.deltaY : wheel.deltaX, passed });
+    return true;
   }
 
   window.addEventListener(
     'wheel',
     (event) => {
       if (event.defaultPrevented || !settings) return;
-      const m = mode();
-      if (event.ctrlKey) {
+      const wheel: WheelTurn = { deltaX: event.deltaX, deltaY: event.deltaY, ctrlKey: event.ctrlKey, x: event.clientX, y: event.clientY };
+      if (!shown) {
+        // Chromium sends the rest of a spin to the frame it began over, also once that frame is out of sight (the
+        // page turned into the next document): the document on screen takes it.
         event.preventDefault();
-        if (m === 'fixed') zoomFixed(Math.exp(-event.deltaY * 0.0025), event.clientX, event.clientY);
-        else wheelTextZoom(event);
+        post({ type: 'passWheel', ...wheel });
         return;
       }
-      const newGesture = event.timeStamp - lastWheel > EDGE_PAUSE_MS;
-      lastWheel = event.timeStamp;
-      if (m === 'scrolled') {
-        // Scrolls natively; past the end (start) of the chapter, moves on to the next (previous) one.
-        if (event.deltaY === 0) return;
-        const el = scroller();
-        const atEdge = event.deltaY > 0 ? el.scrollTop + window.innerHeight >= el.scrollHeight - 2 : el.scrollTop <= 0;
-        if (!atEdge) return;
-        event.preventDefault();
-        if (newGesture) post({ type: 'wheel', delta: event.deltaY });
-        return;
-      }
-      event.preventDefault();
-      // A zoomed page scrolls first (Shift+wheel or a touchpad: sideways).
-      if (m === 'fixed' && fixed.zoom > 1 && (panFixed(-event.deltaX, -event.deltaY) || !newGesture)) return;
-      post({ type: 'wheel', delta: Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX });
+      if (onWheel(wheel, event.timeStamp, false)) event.preventDefault();
     },
     { passive: false },
   );
