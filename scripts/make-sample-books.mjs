@@ -288,6 +288,8 @@ ${fence}js
 console.log('code block');
 ${fence}
 
+${lorem.repeat(12)}
+
 ## Second part
 
 ${lorem.repeat(30)}

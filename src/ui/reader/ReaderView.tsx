@@ -604,7 +604,6 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
   /** Text, PDF, DjVu and comics can show two pages side by side; text only when it is paginated. */
   const canSpread = manifest.layout === 'reflowable' || hasPageSpreads(manifest);
   const spreadApplies = manifest.layout !== 'reflowable' || settings.flow === 'paginated';
-  const percent = Math.round(overall * 100);
   const spineCount = manifest.spine.length;
   const marks = spineCount > 1 && spineCount <= MAX_SLIDER_MARKS ? Array.from({ length: spineCount - 1 }, (_, i) => (i + 1) / spineCount) : [];
 
@@ -705,18 +704,9 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
           )}
 
           <footer className="reader-bar reader-bottom">
-            <div className="reader-numbers-row">
-              <button type="button" className="icon-button" onClick={() => visualTurn(-1)} aria-label="Previous page">
-                <Icon name="chevronLeft" />
-              </button>
-              <span className="reader-numbers">
-                {showPageNumbers ? `Page ${location.page + 1} of ${location.pageCount} · ` : ''}
-                {percent}%
-              </span>
-              <button type="button" className="icon-button" onClick={() => visualTurn(1)} aria-label="Next page">
-                <Icon name="chevronRight" />
-              </button>
-            </div>
+            <button type="button" className="icon-button" onClick={() => visualTurn(-1)} aria-label="Previous page">
+              <Icon name="chevronLeft" />
+            </button>
             <div className="reader-slider-wrap">
               <div className="reader-marks" aria-hidden="true">
                 {marks.map((at) => (
@@ -738,13 +728,12 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
                 aria-label="Position in book"
               />
             </div>
+            <button type="button" className="icon-button" onClick={() => visualTurn(1)} aria-label="Next page">
+              <Icon name="chevronRight" />
+            </button>
           </footer>
         </>
-      ) : (
-        <div className="reader-folio" aria-hidden="true">
-          {showPageNumbers ? `${location.page + 1} / ${location.pageCount}` : `${percent}%`}
-        </div>
-      )}
+      ) : null}
 
       {panel === 'toc' && (
         <TocPanel

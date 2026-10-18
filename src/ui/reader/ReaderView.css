@@ -197,28 +197,16 @@
   padding-bottom: calc(0.5rem + var(--safe-bottom));
   box-shadow: 0 -2px 4px rgb(0 0 0 / 0.2);
   z-index: 1;
-}
-
-.reader-numbers-row {
+  /* The page buttons on either side of the position slider. */
   display: flex;
   align-items: center;
-  justify-content: space-between;
-}
-
-.reader-numbers {
-  flex: 1;
-  min-width: 0;
-  text-align: center;
-  font-size: 1.05rem;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .reader-slider-wrap {
   position: relative;
-  margin: 0 0.75rem;
+  flex: 1;
+  min-width: 0;
+  margin: 0 0.25rem;
 }
 
 /* Chapter starts, as ticks on the slider track. Inset by the thumb radius to line up with the track. */
@@ -285,23 +273,4 @@
   border: none;
   border-radius: 50%;
   background: var(--track);
-}
-
-/* The page number shown under the text while the bars are hidden. */
-.reader-folio {
-  flex: none;
-  height: 1.6rem;
-  display: grid;
-  place-items: center;
-  font-size: 0.8rem;
-  color: #8c8c8c;
-  font-variant-numeric: tabular-nums;
-}
-
-.reader[data-theme='sepia'] .reader-folio {
-  color: #9d8a70;
-}
-
-.reader[data-theme='dark'] .reader-folio {
-  color: #7a7a80;
 }
