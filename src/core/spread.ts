@@ -1,11 +1,12 @@
 /**
- * Two-page spreads of page-image books (PDF, DjVu): which spine documents are shown together. A spread is
+ * Two-page spreads of page-image books (PDF, DjVu, comics): which spine documents are shown together. A spread is
  * shown by the document of its first page, which draws the second page beside its own.
  */
-import type { BookFormat } from './types';
+import { COMIC_PAGES_VERSION, type BookManifest } from './types';
 
-/** Books whose page documents can show the next page beside their own. */
-export const hasPageSpreads = (book: { format: BookFormat } | null | undefined) => book?.format === 'pdf' || book?.format === 'djvu';
+/** Books whose page documents can show the next page beside their own (comics imported since their pages can). */
+export const hasPageSpreads = (book: Pick<BookManifest, 'format' | 'pagesVersion'> | null | undefined) =>
+  book?.format === 'pdf' || book?.format === 'djvu' || (book?.format === 'cbz' && (book.pagesVersion ?? 1) >= COMIC_PAGES_VERSION);
 
 /** Narrower than this, two pages side by side would be too cramped to read. */
 const SPREAD_MIN_WIDTH = 640;

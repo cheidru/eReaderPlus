@@ -82,8 +82,9 @@ import { findRange } from '../core/textsearch';
     const sized = width > 0 && height > 0;
     // A spread (PDF, DjVu) is fitted as two boxes as large as this page. A pair fills both (the next page goes in
     // the other, or nothing); a page alone (the cover) is centered, as large as the pages of a pair.
-    const spread = sized ? (settings?.fixedSpread ?? null) : null;
-    // A page without a size (comics: an image fitted to the screen) is as large as the screen.
+    const spread = settings?.fixedSpread ?? null;
+    // A page without a size (comics: an image fitted to the screen) is as large as the screen, and lays out a spread
+    // inside it itself (cbz.ts).
     fixed.width = sized ? width * (spread === 'pair' ? 2 : 1) : window.innerWidth;
     fixed.height = sized ? height : window.innerHeight;
     fixed.fit = sized ? Math.min(window.innerWidth / (width * (spread ? 2 : 1)), window.innerHeight / height) : 1;

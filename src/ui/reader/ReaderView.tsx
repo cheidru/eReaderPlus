@@ -3,7 +3,7 @@ import { bookTexts, findInTexts, isSearchable } from '../../core/booksearch';
 import { DJVU_SOURCE, loadDjvuLibrary } from '../../core/djvu';
 import { DjvuPageStore, openDjvuWorkers, pageMemoryBudget } from '../../core/djvu-pages';
 import { assignSlots, FRAME_SLOTS, wantedDocuments } from '../../core/frames';
-import { loadManifest } from '../../core/import';
+import { openManifest } from '../../core/import';
 import { loadBookView, loadProgress, markOpened, overallProgress, saveBookView, saveProgress, type BookView } from '../../core/library';
 import { MESSAGE_TAG, parseFrameMessage, type DjvuPageData, type FixedSpread, type FrameSettings, type GotoTarget, type HostMessage } from '../../core/messages';
 import type { PdfPageData } from '../../core/pdf-common';
@@ -168,7 +168,7 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
     let cancelled = false;
     (async () => {
       try {
-        const [m, progress, savedView] = await Promise.all([loadManifest(platform, bookId), loadProgress(platform, bookId), loadBookView(platform, bookId)]);
+        const [m, progress, savedView] = await Promise.all([openManifest(platform, bookId), loadProgress(platform, bookId), loadBookView(platform, bookId)]);
         if (cancelled) return;
         // A book opened for the first time takes the view last chosen for another book, and keeps it from then on.
         const view = savedView ?? { spread: appSettingsRef.current.spread, spreadCover: appSettingsRef.current.spreadCover };
@@ -281,7 +281,7 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
     if (progress) saveProgress(platform, bookId, progress).catch((e: unknown) => console.error('Saving reading position failed:', e));
   }, [platform, bookId]);
 
-  /** A PDF or DjVu spread shows two pages (paired as spread.ts says): the page document of the first shows the second beside it. */
+  /** A PDF, DjVu or comic spread shows two pages (paired as spread.ts says): the page document of the first shows the second beside it. */
   const pageSpread = hasPageSpreads(manifest) && settings.spread && frameFitsSpread;
   const coverAlone = settings.spreadCover;
   /** The page whose document shows page `index`: the first of its spread. */
@@ -601,7 +601,7 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
   const overall = overallProgress(manifest, lastShown(spineIndex), location.fraction);
   const chapterTitle = findTocLabel(manifest.toc, manifest.spine[spineIndex].href);
   const showPageNumbers = settings.flow === 'paginated' && manifest.layout === 'reflowable';
-  /** Text, PDF and DjVu can show two pages side by side; text only when it is paginated. */
+  /** Text, PDF, DjVu and comics can show two pages side by side; text only when it is paginated. */
   const canSpread = manifest.layout === 'reflowable' || hasPageSpreads(manifest);
   const spreadApplies = manifest.layout !== 'reflowable' || settings.flow === 'paginated';
   const percent = Math.round(overall * 100);

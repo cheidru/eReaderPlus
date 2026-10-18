@@ -6,7 +6,7 @@ import './Panels.css';
 interface Props {
   settings: ReaderSettings;
   fixedLayout: boolean;
-  /** Whether the book can show two pages side by side (text, PDF and DjVu). */
+  /** Whether the book can show two pages side by side (text, PDF, DjVu and comics). */
   canSpread: boolean;
   onChange: (settings: ReaderSettings) => void;
   onClose: () => void;

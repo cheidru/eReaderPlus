@@ -1,6 +1,6 @@
 import type { FileRef, Platform } from '../platform/platform';
 import { platformBookFs } from './bookfs';
-import { comicImages, importCbz } from './cbz';
+import { comicImages, importCbz, upgradeComicPages } from './cbz';
 import { CHM_SOURCE, importChm } from './chm';
 import { DJVU_SOURCE, importDjvu, loadDjvuLibrary } from './djvu';
 import { importEpub, isEpubContainer, type ParsedBook } from './epub';
@@ -88,4 +88,19 @@ async function convert(platform: Platform, file: FileRef, id: string, onPreview?
 
 export async function loadManifest(platform: Platform, bookId: string): Promise<BookManifest> {
   return JSON.parse(await platform.readText(bookId, MANIFEST_PATH)) as BookManifest;
+}
+
+/** Loads a book's manifest to read the book, first bringing up to date what an older version of the app wrote at import. */
+export async function openManifest(platform: Platform, bookId: string): Promise<BookManifest> {
+  const manifest = await loadManifest(platform, bookId);
+  try {
+    const upgraded = await upgradeComicPages(platformBookFs(platform, bookId, []), manifest);
+    if (!upgraded) return manifest;
+    await platform.writeText(bookId, MANIFEST_PATH, JSON.stringify(upgraded));
+    return upgraded;
+  } catch (error) {
+    // The book still reads as before, only without what the upgrade adds.
+    console.warn('Could not bring the book up to date:', error);
+    return manifest;
+  }
 }

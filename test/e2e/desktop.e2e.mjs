@@ -327,6 +327,38 @@ process.on('uncaughtException', (error) => {
     assert.equal(shownAt, loadedAt);
     assert.ok(behind);
   });
+
+  // Landscape window: pages 3–4 side by side, meeting in the middle, then 1–2.
+  await page.getByRole('button', { name: 'Two-page view' }).click();
+  const comicSpread = async () => {
+    await page.waitForTimeout(300);
+    const src = await shownFrame(page).getAttribute('src');
+    const frame = page.frames().find((f) => f.url() === src);
+    await frame.waitForFunction(() => [...document.images].every((image) => image.complete));
+    return {
+      page: src.split('/').pop(),
+      ...(await frame.evaluate(() => {
+        const box = (selector) => document.querySelector(selector)?.getBoundingClientRect();
+        const [first, next] = [box('img.page'), box('img.next')];
+        return { middle: innerWidth / 2, first: [first.left, first.right], next: next && next.width ? [next.left, next.right] : null };
+      })),
+    };
+  };
+  const spreadThree = await comicSpread();
+  await page.keyboard.press('ArrowLeft');
+  const spreadOne = await comicSpread();
+  await page.screenshot({ path: path.join(shots, '8b-cbz-spread.png') });
+  check('comic two-page view shows the next page beside, meeting in the middle, and turns two pages', () => {
+    for (const spread of [spreadThree, spreadOne]) {
+      assert.ok(spread.next, JSON.stringify(spread));
+      assert.ok(Math.abs(spread.first[1] - spread.middle) < 2 && Math.abs(spread.next[0] - spread.middle) < 2, JSON.stringify(spread));
+      assert.ok(spread.first[0] > 0, JSON.stringify(spread));
+    }
+    assert.deepEqual([spreadThree.page, spreadOne.page], ['0003.xhtml', '0001.xhtml']);
+  });
+  // Books opened for the first time take the view chosen last: the books below start with one page.
+  await page.getByRole('button', { name: 'Two-page view' }).click();
+  await page.waitForTimeout(300);
   await app.close();
 }
 

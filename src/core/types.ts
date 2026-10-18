@@ -40,7 +40,15 @@ export interface BookManifest {
   toc: TocItem[];
   /** Original path → path actually served, for documents rewritten at import (scripted XHTML → HTML). */
   aliases?: Record<string, string>;
+  /** Comics: version of the page documents written at import (COMIC_PAGES_VERSION); missing is 1. */
+  pagesVersion?: number;
 }
+
+/**
+ * Version of the page documents written for a comic (cbz.ts). 2: each page also holds the next image, shown beside it
+ * in a two-page spread. Comics imported with older page documents get them written again when opened.
+ */
+export const COMIC_PAGES_VERSION = 2;
 
 /**
  * What the library shows of a book being imported as soon as the importer knows it (title, authors, cover image),
@@ -146,7 +154,7 @@ export interface ReaderSettings {
   fontWeight: number;
   /** Paginated text and PDF show two pages side by side when the window is in landscape. */
   spread: boolean;
-  /** PDF and DjVu spreads show the first page alone, then pages 2–3, 4–5, … as in a printed book. */
+  /** PDF, DjVu and comic spreads show the first page alone, then pages 2–3, 4–5, … as in a printed book. */
   spreadCover: boolean;
   /** When false, the reader injects no typography overrides at all (publisher layout). */
   overrideStyles: boolean;
