@@ -6,7 +6,6 @@ import { assignSlots, FRAME_SLOTS, wantedDocuments } from '../../core/frames';
 import { openManifest } from '../../core/import';
 import { loadBookView, loadProgress, markOpened, overallProgress, saveBookView, saveProgress, type BookView } from '../../core/library';
 import { MESSAGE_TAG, parseFrameMessage, type DjvuPageData, type FixedSpread, type FrameSettings, type GotoTarget, type HostMessage } from '../../core/messages';
-import { bookTextLengths, estimatePageCounts } from '../../core/pagecount';
 import type { PdfPageData } from '../../core/pdf-common';
 import { splitFragment } from '../../core/paths';
 import { loadPdfLibrary, PDF_SOURCE } from '../../core/pdf';
@@ -63,12 +62,6 @@ const WAIT_SPINNER_DELAY_MS = 300;
 /** Above this many documents, chapter marks on the position slider would merge into a solid bar. */
 const MAX_SLIDER_MARKS = 120;
 
-/** What a text document's page count depends on: the settings that lay it out and the size of the frames. */
-function layoutKey(settings: ReaderSettings, box: HTMLElement | null): string {
-  const { flow, fontScale, fontFamily, lineHeight, margin, fontWeight, spread, overrideStyles } = settings;
-  return [flow, fontScale, fontFamily, lineHeight, margin, fontWeight, spread, overrideStyles, box?.clientWidth, box?.clientHeight].join('|');
-}
-
 export function ReaderView({ platform, bookId, settings: appSettings, onSettingsChange, onClose, onError }: Props) {
   const [manifest, setManifest] = useState<BookManifest | null>(null);
   /** This book's own one or two page view (and cover alone), saved with the book. */
@@ -84,10 +77,6 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
   const [frameFitsSpread, setFrameFitsSpread] = useState(false);
   /** Stops reading the book's text for search when the book is closed. */
   const searchAbort = useRef(new AbortController());
-  /** Text books: the length of each document's text, which estimates the page counts not measured yet. */
-  const [textLengths, setTextLengths] = useState<number[] | null>(null);
-  /** Text books: the page count of each document laid out in a frame, while the layout stays the same. */
-  const pageCounts = useRef({ layout: '', counts: new Map<number, number>() });
 
   /** The spine document loaded in each frame (see frames.ts): the one shown, and the next and previous ones, ready to show. */
   const [slots, setSlots] = useState<readonly (number | null)[]>(() => Array<null>(FRAME_SLOTS).fill(null));
@@ -437,16 +426,7 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
           setFramesChanged((n) => n + 1);
           break;
         }
-        case 'relocate': {
-          if (manifest.layout === 'reflowable') {
-            const layout = layoutKey(settings, framesBox.current);
-            if (pageCounts.current.layout !== layout) pageCounts.current = { layout, counts: new Map() };
-            const { counts } = pageCounts.current;
-            if (counts.get(frame.index) !== message.pageCount) {
-              counts.set(frame.index, message.pageCount);
-              setFramesChanged((n) => n + 1);
-            }
-          }
+        case 'relocate':
           if (!current) break;
           setLocation(message);
           pendingSave.current = {
@@ -458,7 +438,6 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
           window.clearTimeout(saveTimer.current);
           saveTimer.current = window.setTimeout(flushSave, 400);
           break;
-        }
         case 'edge':
           if (!current) break;
           // Past the last page shown, or before the first (whose spread `navigate` finds).
@@ -559,16 +538,6 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
     return () => controller.abort();
   }, []);
 
-  // Text books: the length of each document's text, for page numbers across the book.
-  useEffect(() => {
-    if (!manifest || manifest.layout !== 'reflowable') return;
-    const controller = new AbortController();
-    bookTextLengths(platform, manifest, controller.signal).then(setTextLengths, (e: unknown) => {
-      if (!controller.signal.aborted) console.warn('Reading the length of the book failed:', e);
-    });
-    return () => controller.abort();
-  }, [platform, manifest]);
-
   // Search inside the book: once typing pauses, reads the book's text (only for the first search) and finds matches.
   const query = search.query;
   useEffect(() => {
@@ -635,23 +604,8 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
   /** Text, PDF, DjVu and comics can show two pages side by side; text only when it is paginated. */
   const canSpread = manifest.layout === 'reflowable' || hasPageSpreads(manifest);
   const spreadApplies = manifest.layout !== 'reflowable' || settings.flow === 'paginated';
+  const percent = Math.round(overall * 100);
   const spineCount = manifest.spine.length;
-  /** The pages shown (two in a fixed-layout spread), numbered across the whole book, and the book's page count. */
-  let firstPage: number;
-  let lastPage: number;
-  let totalPages: number;
-  if (manifest.layout === 'pre-paginated') {
-    // Each document is a page.
-    firstPage = spineIndex + 1;
-    lastPage = lastShown(spineIndex) + 1;
-    totalPages = spineCount;
-  } else {
-    const counts = estimatePageCounts(spineCount, textLengths, pageCounts.current.counts);
-    const before = counts.slice(0, spineIndex).reduce((sum, n) => sum + n, 0);
-    totalPages = counts.reduce((sum, n) => sum + n, 0);
-    firstPage = lastPage = Math.min(totalPages, before + location.page + 1);
-  }
-  const shownPages = firstPage === lastPage ? String(firstPage) : `${firstPage}–${lastPage}`;
   const marks = spineCount > 1 && spineCount <= MAX_SLIDER_MARKS ? Array.from({ length: spineCount - 1 }, (_, i) => (i + 1) / spineCount) : [];
 
   return (
@@ -756,7 +710,8 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
                 <Icon name="chevronLeft" />
               </button>
               <span className="reader-numbers">
-                {firstPage === lastPage ? 'Page' : 'Pages'} {shownPages} of {totalPages}
+                {showPageNumbers ? `Page ${location.page + 1} of ${location.pageCount} · ` : ''}
+                {percent}%
               </span>
               <button type="button" className="icon-button" onClick={() => visualTurn(1)} aria-label="Next page">
                 <Icon name="chevronRight" />
@@ -787,7 +742,7 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
         </>
       ) : (
         <div className="reader-folio" aria-hidden="true">
-          {shownPages} / {totalPages}
+          {showPageNumbers ? `${location.page + 1} / ${location.pageCount}` : `${percent}%`}
         </div>
       )}
 

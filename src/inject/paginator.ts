@@ -42,13 +42,7 @@ import { findRange } from '../core/textsearch';
   }
 
   function report() {
-    const fraction = currentFraction();
-    if (mode() === 'scrolled') {
-      // Images and fonts change the height while the reader scrolls; the page shown runs from the first screen to the last.
-      measure();
-      page = Math.round(fraction * (pageCount - 1));
-    }
-    post({ type: 'relocate', page, pageCount, fraction });
+    post({ type: 'relocate', page, pageCount, fraction: currentFraction() });
   }
 
   function scrollToPage() {
@@ -68,9 +62,6 @@ import { findRange } from '../core/textsearch';
       const spreads = scroller().scrollWidth / window.innerWidth;
       // An odd number of columns leaves the last spread half full: it still counts as a page.
       pageCount = Math.max(1, root.classList.contains('ereader-spread') ? Math.ceil(spreads - 0.05) : Math.round(spreads));
-    } else if (mode() === 'scrolled') {
-      // A page is a screenful.
-      pageCount = Math.max(1, Math.ceil(scroller().scrollHeight / window.innerHeight - 0.05));
     } else {
       pageCount = 1;
     }
