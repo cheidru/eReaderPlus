@@ -600,7 +600,6 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
 
   const overall = overallProgress(manifest, lastShown(spineIndex), location.fraction);
   const chapterTitle = findTocLabel(manifest.toc, manifest.spine[spineIndex].href);
-  const showPageNumbers = settings.flow === 'paginated' && manifest.layout === 'reflowable';
   /** Text, PDF, DjVu and comics can show two pages side by side; text only when it is paginated. */
   const canSpread = manifest.layout === 'reflowable' || hasPageSpreads(manifest);
   const spreadApplies = manifest.layout !== 'reflowable' || settings.flow === 'paginated';
@@ -673,13 +672,7 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
             <div className="reader-heading">
               <span className="reader-title">{manifest.title}</span>
               {manifest.authors.length > 0 && <span className="reader-subtitle">{manifest.authors.join(', ')}</span>}
-              {(chapterTitle || showPageNumbers) && (
-                <span className="reader-subtitle">
-                  {chapterTitle}
-                  {chapterTitle && showPageNumbers ? ' · ' : ''}
-                  {showPageNumbers ? `p. ${location.page + 1}/${location.pageCount}` : ''}
-                </span>
-              )}
+              {chapterTitle && <span className="reader-subtitle">{chapterTitle}</span>}
             </div>
           </header>
 

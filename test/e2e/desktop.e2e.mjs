@@ -105,17 +105,16 @@ process.on('uncaughtException', (error) => {
   check('book has its own origin', () => assert.match(layout.origin, /^book:\/\/[a-f0-9]{32}$/));
   await page.screenshot({ path: path.join(shots, '1-modern-page1.png') });
 
-  // The page in the chapter, shown after the chapter title under the book's title.
-  const chapterPage = () => page.locator('.reader-heading .reader-subtitle').last().textContent();
-  await page.locator('.reader-heading .reader-subtitle').last().waitFor();
+  /** The page of the chapter on screen (0-based), from how far its columns are scrolled. */
+  const chapterPage = () => frame.evaluate(() => Math.round(scrollX / innerWidth));
   const before = await chapterPage();
   await page.keyboard.press('ArrowRight');
   await page.waitForTimeout(300);
   const after = await chapterPage();
   const scrollX = await frame.evaluate(() => scrollX);
   check('ArrowRight turns the page', () => {
-    assert.match(before, /p\. 1\/\d+$/);
-    assert.match(after, /p\. 2\/\d+$/);
+    assert.equal(before, 0);
+    assert.equal(after, 1);
     assert.ok(scrollX > 0);
   });
   await page.screenshot({ path: path.join(shots, '2-modern-page2.png') });
@@ -124,7 +123,7 @@ process.on('uncaughtException', (error) => {
   await page.mouse.wheel(0, 100);
   await page.waitForTimeout(400);
   const afterWheel = await chapterPage();
-  check('mouse wheel turns the page', () => assert.match(afterWheel, /p\. 3\/\d+$/));
+  check('mouse wheel turns the page', () => assert.equal(afterWheel, 2));
   const fontScale = () => frame.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--ereader-font-scale').trim());
   await page.keyboard.down('Control');
   await page.mouse.wheel(0, -100);
@@ -155,7 +154,7 @@ process.on('uncaughtException', (error) => {
     assert.ok(hitCount > 8, String(hitCount));
     assert.deepEqual([match.count, match.text], [1, 'pagination']);
     assert.ok(match.left >= 0 && match.left < match.width, JSON.stringify(match));
-    assert.doesNotMatch(matchPage, /p\. 1\/\d+$/);
+    assert.notEqual(matchPage, 0);
     assert.match(searchBar, new RegExp(`9 of ${hitCount}`));
   });
   await page.screenshot({ path: path.join(shots, '2b-search.png') });
@@ -267,8 +266,8 @@ process.on('uncaughtException', (error) => {
   check('pinch changes the font size', () => assert.deepEqual([pinched, unpinched], ['1.1', '1']));
   await frame.evaluate(touch, [[[500, 600]], [[500, 300]]]);
   await page.waitForTimeout(400);
-  const swiped = await page.locator('.reader-heading .reader-subtitle').last().textContent();
-  check('swiping up turns the page', () => assert.match(swiped, /p\. 2\/\d+$/));
+  const swiped = await frame.evaluate(() => Math.round(scrollX / innerWidth));
+  check('swiping up turns the page', () => assert.equal(swiped, 1));
 
   await page.getByRole('button', { name: 'Display settings' }).click();
   await page.getByRole('button', { name: 'Scroll' }).click();
