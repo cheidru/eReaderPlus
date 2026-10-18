@@ -24,6 +24,9 @@ async function launch(book) {
   return { app, page };
 }
 
+/** The book frame on screen; the documents next to it are loaded ahead in frames out of sight. */
+const shownFrame = (page) => page.locator('.reader-frame:not(.reader-frame-hidden)');
+
 async function bookFrame(page, file) {
   for (let i = 0; i < 100; i++) {
     const frame = page.frames().find((f) => f.url().startsWith('book://') && f.url().includes(file));
@@ -312,6 +315,18 @@ process.on('uncaughtException', (error) => {
   await page.screenshot({ path: path.join(shots, '8-cbz.png') });
   const title = await page.locator('.reader-title').textContent();
   check('ComicInfo title used', () => assert.equal(title, 'Sample Comic #1'));
+  const ahead = await bookFrame(page, '0003.xhtml');
+  const loadedAt = await ahead.evaluate(() => performance.timeOrigin);
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(150);
+  const turnedTo = await shownFrame(page).getAttribute('src');
+  const shownAt = await ahead.evaluate(() => performance.timeOrigin);
+  const behind = page.frames().some((f) => f.url().endsWith('0002.xhtml'));
+  check('the next comic page is loaded ahead and shown at once, the one before stays loaded', () => {
+    assert.match(turnedTo, /0003\.xhtml$/);
+    assert.equal(shownAt, loadedAt);
+    assert.ok(behind);
+  });
   await app.close();
 }
 
@@ -476,8 +491,9 @@ async function frameWithText(page, text) {
   await first.frame.focus('body');
   await page.keyboard.press(' ');
   await page.waitForTimeout(500);
-  const afterSpace = page.frames().filter((f) => f.url().startsWith('book://')).map((f) => f.url().split('/').pop());
-  check('Space does not turn the page, from the app or the page', () => assert.deepEqual(afterSpace, ['0001.html']));
+  // The next page is loaded ahead, in a frame out of sight: only the frame on screen counts.
+  const afterSpace = (await shownFrame(page).getAttribute('src')).split('/').pop();
+  check('Space does not turn the page, from the app or the page', () => assert.equal(afterSpace, '0001.html'));
   await page.screenshot({ path: path.join(shots, '13-pdf.png') });
   const links = await first.frame.evaluate(() => [...document.querySelectorAll('.pdf-links a')].map((a) => a.getAttribute('href')));
   check('PDF link annotations become links', () => assert.deepEqual(links.sort(), ['0003.html', 'https://example.com/']));

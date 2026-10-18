@@ -73,6 +73,8 @@ export type HostMessage =
   | { tag: typeof MESSAGE_TAG; type: 'zoom'; zoom: number; panX: number }
   /** Fixed layout: Space is held (or released) while the app has the focus, so mouse drags pan a zoomed page. */
   | { tag: typeof MESSAGE_TAG; type: 'hand'; on: boolean }
+  /** Whether the document is on screen, or loaded ahead of the reader in a frame out of sight (where its media waits). */
+  | { tag: typeof MESSAGE_TAG; type: 'shown'; shown: boolean }
   /**
    * DjVu: the answer to a page document's `djvuPage` request. `count` is the book's page count, or 0 when the app
    * can't decode the book (the page document then decodes the page itself); `data` is null past the last page.

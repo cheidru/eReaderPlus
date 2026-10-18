@@ -49,15 +49,30 @@
   background: var(--bg);
 }
 
-.reader-frame {
+/* The book's frames, on top of each other: the one shown, and the documents loaded ahead (hidden). */
+.reader-frames {
+  position: relative;
   flex: 1;
   min-height: 0;
   width: calc(100% - var(--safe-left) - var(--safe-right));
   margin: 0 var(--safe-right) 0 var(--safe-left);
+}
+
+.reader-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   border: none;
   display: block;
   background: transparent;
   color-scheme: light;
+}
+
+/* Transparent rather than hidden: a hidden frame isn't drawn until shown, which takes a moment for a large page. */
+.reader-frame-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Lets a dark book page show through transparently instead of on a white canvas. */

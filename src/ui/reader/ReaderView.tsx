@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { bookTexts, findInTexts, isSearchable } from '../../core/booksearch';
 import { DJVU_SOURCE, loadDjvuLibrary } from '../../core/djvu';
 import { DjvuPageStore, openDjvuWorkers, pageMemoryBudget } from '../../core/djvu-pages';
+import { assignSlots, FRAME_SLOTS, wantedDocuments } from '../../core/frames';
 import { loadManifest } from '../../core/import';
 import { loadBookView, loadProgress, markOpened, overallProgress, saveBookView, saveProgress, type BookView } from '../../core/library';
 import { MESSAGE_TAG, parseFrameMessage, type DjvuPageData, type FixedSpread, type FrameSettings, type GotoTarget, type HostMessage } from '../../core/messages';
@@ -37,6 +38,22 @@ interface Location {
 
 type Panel = 'toc' | 'settings' | 'search' | null;
 
+/** A frame holding a spine document (see frames.ts). */
+interface FrameState {
+  index: number | null;
+  /** Where to go once the document's paginator announces itself. */
+  target: GotoTarget;
+  /** The paginator has announced itself and been sent the settings. */
+  ready: boolean;
+  /**
+   * Whether the document shows its content: once its paginator announces itself, or for DjVu once the app has sent
+   * it its page (decoding a page can take a while). The galaxy spinner shows while the current document doesn't.
+   */
+  shown: boolean;
+}
+
+const NO_FRAME: FrameState = { index: null, target: { kind: 'fraction', value: 0 }, ready: false, shown: false };
+
 const WHEEL_THROTTLE_MS = 250;
 /** Search waits until typing pauses this long. */
 const SEARCH_DELAY_MS = 300;
@@ -61,17 +78,18 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
   /** Stops reading the book's text for search when the book is closed. */
   const searchAbort = useRef(new AbortController());
 
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  /** Where to go once the next spine document reports `ready`. */
-  const pendingTarget = useRef<GotoTarget>({ kind: 'fraction', value: 0 });
-  /** True once the current spine document's paginator has announced itself. */
-  const frameReady = useRef(false);
-  /**
-   * Whether the current spine document shows its content: once its paginator announces itself, or for DjVu once the
-   * app has sent it its page (decoding a page can take a while). The galaxy spinner shows while it doesn't.
-   */
-  const [frameShown, setFrameShown] = useState(false);
+  /** The spine document loaded in each frame (see frames.ts): the one shown, and the next and previous ones, ready to show. */
+  const [slots, setSlots] = useState<readonly (number | null)[]>(() => Array<null>(FRAME_SLOTS).fill(null));
+  const slotsRef = useRef(slots);
+  /** The frame on screen: the current document's once it is ready, until then the one shown before (null: none yet). */
+  const [visibleSlot, setVisibleSlot] = useState<number | null>(null);
+  const visibleSlotRef = useRef(visibleSlot);
+  const frames = useRef<FrameState[]>(Array.from({ length: FRAME_SLOTS }, () => ({ ...NO_FRAME })));
+  const frameElements = useRef<(HTMLIFrameElement | null)[]>([]);
+  /** Re-renders after a change to `frames`, which messages from the frames make. */
+  const [, setFramesChanged] = useState(0);
   const spineIndexRef = useRef(0);
+  const framesBox = useRef<HTMLDivElement>(null);
   const lastWheel = useRef(0);
   /** Fixed layout: the zoom the reader chose, carried over to the pages that follow. */
   const fixedZoom = useRef({ zoom: 1, panX: 0.5 });
@@ -109,6 +127,43 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
     [platform, bookId, bookView, appSettings, onSettingsChange],
   );
 
+  /**
+   * Loads documents into frames (frames.ts), each to show at its target once ready, keeping the frame on screen.
+   * Returns the slots, with each of the documents in one unless the frames were all taken.
+   */
+  const loadDocuments = useCallback((documents: { index: number; target: GotoTarget }[]) => {
+    const before = slotsRef.current;
+    const after = assignSlots(before, documents.map((d) => d.index), visibleSlotRef.current);
+    if (after === before) return before;
+    after.forEach((index, slot) => {
+      if (index === before[slot] || index === null) return;
+      frames.current[slot] = { ...NO_FRAME, index, target: documents.find((d) => d.index === index)!.target };
+    });
+    slotsRef.current = after;
+    setSlots(after);
+    return after;
+  }, []);
+
+  /** Posts to the document in frame `slot`, once its paginator listens. */
+  const postTo = useCallback(
+    (slot: number, message: HostMessage) => {
+      if (frames.current[slot]?.ready) frameElements.current[slot]?.contentWindow?.postMessage(message, origin);
+    },
+    [origin],
+  );
+
+  /** Puts frame `slot` on screen, and the one there before out of sight. */
+  const showSlot = useCallback(
+    (slot: number) => {
+      const before = visibleSlotRef.current;
+      if (before !== null && before !== slot) postTo(before, { tag: MESSAGE_TAG, type: 'shown', shown: false });
+      postTo(slot, { tag: MESSAGE_TAG, type: 'shown', shown: true });
+      visibleSlotRef.current = slot;
+      setVisibleSlot(slot);
+    },
+    [postTo],
+  );
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -120,7 +175,8 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
         if (!savedView) void saveBookView(platform, bookId, view);
         setBookView(view);
         const index = progress ? Math.min(progress.spineIndex, m.spine.length - 1) : 0;
-        pendingTarget.current = { kind: 'fraction', value: progress?.fraction ?? 0 };
+        loadDocuments([{ index, target: { kind: 'fraction', value: progress?.fraction ?? 0 } }]);
+        spineIndexRef.current = index;
         setSpineIndex(index);
         setManifest(m);
         void markOpened(platform, bookId);
@@ -132,7 +188,7 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
     return () => {
       cancelled = true;
     };
-  }, [platform, bookId]);
+  }, [platform, bookId, loadDocuments]);
 
   // DjVu: read the book into memory in the background while its first page document loads.
   const format = manifest?.format;
@@ -163,12 +219,12 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
     };
   }, [platform, bookId, format]);
 
-  /** Sends a PDF page document the page it asked for; a count of 0 tells it to draw its pages itself. */
+  /** Sends a PDF page document (in frame `slot`) the page it asked for; a count of 0 tells it to draw its pages itself. */
   const answerPdfPage = useCallback(
-    (page: number, scale: number) => {
+    (slot: number, page: number, scale: number) => {
       const reply = (count: number, rtl: boolean, data: PdfPageData | null) => {
         const message: HostMessage = { tag: MESSAGE_TAG, type: 'pdfPage', page, scale, count, rtl, data };
-        iframeRef.current?.contentWindow?.postMessage(message, origin);
+        frameElements.current[slot]?.contentWindow?.postMessage(message, origin);
       };
       const store = pdfPages.current;
       if (!store) return reply(0, false, null);
@@ -183,13 +239,18 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
     [origin],
   );
 
-  /** Sends a DjVu page document the page it asked for; a count of 0 tells it to decode the page itself. */
+  /** Sends a DjVu page document (in frame `slot`) the page it asked for; a count of 0 tells it to decode the page itself. */
   const answerDjvuPage = useCallback(
-    (page: number, full: boolean) => {
-      // The frame may show another page document by the time the page is decoded: page documents ignore pages they did not ask for.
+    (slot: number, page: number, full: boolean) => {
+      // The frame may hold another page document by the time the page is decoded: page documents ignore pages they did not ask for.
+      const frame = frames.current[slot];
       const reply = (count: number, data: DjvuPageData | null) => {
         const message: HostMessage = { tag: MESSAGE_TAG, type: 'djvuPage', page, full, count, data };
-        iframeRef.current?.contentWindow?.postMessage(message, origin);
+        frameElements.current[slot]?.contentWindow?.postMessage(message, origin);
+      };
+      const shown = () => {
+        frame.shown = true;
+        setFramesChanged((n) => n + 1);
       };
       const store = djvuPages.current;
       if (!store) return reply(0, null);
@@ -197,23 +258,21 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
         (data) => {
           reply(store.count, data);
           // DjVu page documents are the spine documents, one per page.
-          if (!full && page === spineIndexRef.current + 1) setFrameShown(true);
+          if (!full && frame.index !== null && page === frame.index + 1) shown();
         },
         (error: unknown) => {
           console.warn(`DjVu page ${page} could not be decoded in the app:`, error);
           reply(0, null);
-          setFrameShown(true);
+          shown();
         },
       );
     },
     [origin],
   );
 
-  // A new spine document is not shown until it says so.
-  useEffect(() => {
-    spineIndexRef.current = spineIndex;
-    setFrameShown(false);
-  }, [spineIndex]);
+  const currentSlot = slots.indexOf(spineIndex);
+  /** Whether the current document is on screen and shows its content. */
+  const frameShown = currentSlot >= 0 && visibleSlot === currentSlot && frames.current[currentSlot].shown;
   const showWait = useDelayed(!frameShown, WAIT_SPINNER_DELAY_MS);
 
   const flushSave = useCallback(() => {
@@ -232,27 +291,26 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
     (index: number) => (pageSpread && manifest ? spreadEnd(index, manifest.spine.length, coverAlone) : index),
     [pageSpread, manifest, coverAlone],
   );
-  const fixedSpread: FixedSpread | null = pageSpread ? (coverAlone && spineIndex === 0 ? 'single' : 'pair') : null;
-
-  const frameSettings = useMemo<FrameSettings | null>(
-    () => (manifest ? { ...settings, layout: manifest.layout, fixedSpread } : null),
-    [settings, manifest, fixedSpread],
+  /** The settings for the document of page `index`: in a spread, the first page shows alone as the cover. */
+  const frameSettings = useCallback(
+    (index: number): FrameSettings | null => {
+      if (!manifest) return null;
+      const fixedSpread: FixedSpread | null = pageSpread ? (coverAlone && index === 0 ? 'single' : 'pair') : null;
+      return { ...settings, layout: manifest.layout, fixedSpread };
+    },
+    [settings, manifest, pageSpread, coverAlone],
   );
 
   useEffect(() => {
-    const frame = iframeRef.current;
-    if (!frame) return;
-    const observer = new ResizeObserver(() => setFrameFitsSpread(spreadFits(frame.clientWidth, frame.clientHeight)));
-    observer.observe(frame);
+    const box = framesBox.current;
+    if (!box) return;
+    const observer = new ResizeObserver(() => setFrameFitsSpread(spreadFits(box.clientWidth, box.clientHeight)));
+    observer.observe(box);
     return () => observer.disconnect();
   }, [manifest]);
 
-  const post = useCallback(
-    (message: HostMessage) => {
-      if (frameReady.current) iframeRef.current?.contentWindow?.postMessage(message, origin);
-    },
-    [origin],
-  );
+  /** Posts to the current document. */
+  const post = useCallback((message: HostMessage) => postTo(slotsRef.current.indexOf(spineIndexRef.current), message), [postTo]);
 
   const navigate = useCallback(
     (index: number, target: GotoTarget) => {
@@ -262,15 +320,44 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
         if (target.kind === 'search') target = { ...target, part: index - start };
         index = start;
       }
-      if (index === spineIndex) {
-        post({ tag: MESSAGE_TAG, type: 'goto', target });
+      const slot = loadDocuments([{ index, target }]).indexOf(index);
+      if (slot < 0) return;
+      const frame = frames.current[slot];
+      if (frame.ready) {
+        // Loaded ahead (or the current document): shown at once.
+        postTo(slot, { tag: MESSAGE_TAG, type: 'goto', target });
+        if (manifest.layout === 'pre-paginated' && index !== spineIndexRef.current) postTo(slot, { tag: MESSAGE_TAG, type: 'zoom', ...fixedZoom.current });
+        showSlot(slot);
       } else {
-        pendingTarget.current = target;
-        frameReady.current = false;
+        frame.target = target;
+      }
+      if (index !== spineIndexRef.current) {
+        spineIndexRef.current = index;
         setSpineIndex(index);
       }
     },
-    [manifest, spineIndex, shownBy, post],
+    [manifest, shownBy, loadDocuments, postTo, showSlot],
+  );
+
+  // Once the current document is on screen, the next and previous ones load into the other frames.
+  useEffect(() => {
+    if (!manifest || visibleSlot === null || slots[visibleSlot] !== spineIndex) return;
+    const next = lastShown(spineIndex) + 1;
+    const previous = spineIndex > 0 ? shownBy(spineIndex - 1) : -1;
+    const wanted = wantedDocuments(spineIndex, next, previous, manifest.spine.length);
+    loadDocuments(wanted.map((index) => ({ index, target: index === previous ? { kind: 'end' } : { kind: 'fraction', value: 0 } })));
+  }, [manifest, slots, visibleSlot, spineIndex, lastShown, shownBy, loadDocuments]);
+
+  /** A document without the paginator, which never announces itself, is shown once it has loaded. */
+  const frameLoaded = useCallback(
+    (slot: number) => {
+      const frame = frames.current[slot];
+      if (frame.ready || frame.index === null) return;
+      frame.shown = true;
+      if (frame.index === spineIndexRef.current) showSlot(slot);
+      setFramesChanged((n) => n + 1);
+    },
+    [showSlot],
   );
 
   // Turning a spread on (or the window to landscape, or the cover alone) shows the current page in its spread.
@@ -316,35 +403,46 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
     [panel, visualTurn, turn, navigate, manifest],
   );
 
-  // Messages from the book frame. Only accepted from our iframe and the book's own origin.
+  // Messages from the book frames. Only accepted from our iframes and the book's own origin.
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow || event.origin !== origin) return;
+      const slot = frameElements.current.findIndex((element) => element !== null && element.contentWindow === event.source);
+      if (slot < 0 || event.origin !== origin) return;
       const message = parseFrameMessage(event.data);
-      if (!message || !manifest) return;
+      const frame = frames.current[slot];
+      if (!message || !manifest || frame.index === null) return;
+      /** Whether the message comes from the current document; the others are loaded ahead, out of sight. */
+      const current = frame.index === spineIndexRef.current;
       switch (message.type) {
-        case 'ready':
-          frameReady.current = true;
-          if (manifest.format !== 'djvu') setFrameShown(true);
-          if (frameSettings) post({ tag: MESSAGE_TAG, type: 'settings', settings: frameSettings });
-          post({ tag: MESSAGE_TAG, type: 'goto', target: pendingTarget.current });
-          if (manifest.layout === 'pre-paginated') post({ tag: MESSAGE_TAG, type: 'zoom', ...fixedZoom.current });
+        case 'ready': {
+          frame.ready = true;
+          if (manifest.format !== 'djvu') frame.shown = true;
+          const docSettings = frameSettings(frame.index);
+          if (docSettings) postTo(slot, { tag: MESSAGE_TAG, type: 'settings', settings: docSettings });
+          postTo(slot, { tag: MESSAGE_TAG, type: 'goto', target: frame.target });
+          if (manifest.layout === 'pre-paginated') postTo(slot, { tag: MESSAGE_TAG, type: 'zoom', ...fixedZoom.current });
+          if (current) showSlot(slot);
+          else postTo(slot, { tag: MESSAGE_TAG, type: 'shown', shown: false });
+          setFramesChanged((n) => n + 1);
           break;
+        }
         case 'relocate':
+          if (!current) break;
           setLocation(message);
           pendingSave.current = {
-            spineIndex,
+            spineIndex: frame.index,
             fraction: message.fraction,
-            overall: overallProgress(manifest, lastShown(spineIndex), message.fraction),
+            overall: overallProgress(manifest, lastShown(frame.index), message.fraction),
             updatedAt: Date.now(),
           };
           window.clearTimeout(saveTimer.current);
           saveTimer.current = window.setTimeout(flushSave, 400);
           break;
         case 'edge':
+          if (!current) break;
           // Past the last page shown, or before the first (whose spread `navigate` finds).
-          if (message.dir === 1) navigate(lastShown(spineIndex) + 1, { kind: 'fraction', value: 0 });
-          else navigate(spineIndex - 1, { kind: 'end' });
+          if (message.dir === 1) navigate(lastShown(frame.index) + 1, { kind: 'fraction', value: 0 });
+          else navigate(frame.index - 1, { kind: 'end' });
           break;
         case 'tap':
           if (panel) setPanel(null);
@@ -382,21 +480,24 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
           void platform.openExternal(message.href);
           break;
         case 'djvuPage':
-          answerDjvuPage(message.page, message.full);
+          answerDjvuPage(slot, message.page, message.full);
           break;
         case 'pdfPage':
-          answerPdfPage(message.page, message.scale);
+          answerPdfPage(slot, message.page, message.scale);
           break;
       }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [origin, manifest, settings, changeSettings, frameSettings, post, platform, spineIndex, lastShown, navigate, navigateHref, panel, visualTurn, turn, handleKey, flushSave, answerDjvuPage, answerPdfPage]);
+  }, [origin, manifest, settings, changeSettings, frameSettings, postTo, showSlot, platform, lastShown, navigate, navigateHref, panel, visualTurn, turn, handleKey, flushSave, answerDjvuPage, answerPdfPage]);
 
-  // Push settings changes to the current document.
+  // Push settings changes to every loaded document.
   useEffect(() => {
-    if (frameSettings) post({ tag: MESSAGE_TAG, type: 'settings', settings: frameSettings });
-  }, [frameSettings, post]);
+    frames.current.forEach((frame, slot) => {
+      const next = frame.index === null ? null : frameSettings(frame.index);
+      if (next) postTo(slot, { tag: MESSAGE_TAG, type: 'settings', settings: next });
+    });
+  }, [frameSettings, postTo]);
 
   // Keyboard when focus is in the app rather than inside the book frame.
   useEffect(() => {
@@ -480,7 +581,8 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
   };
 
   const closeSearch = () => {
-    post({ tag: MESSAGE_TAG, type: 'clearSearch' });
+    // A match may also be highlighted in a document turned away from, still loaded in its frame.
+    frames.current.forEach((_, slot) => postTo(slot, { tag: MESSAGE_TAG, type: 'clearSearch' }));
     setSearch(NO_SEARCH);
     if (panel === 'search') setPanel(null);
   };
@@ -508,14 +610,26 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
 
   return (
     <div className={chromeVisible ? 'reader' : 'reader reader-immersive'} data-theme={settings.theme}>
-      <iframe
-        ref={iframeRef}
-        className="reader-frame"
-        title={manifest.title}
-        src={bookUrl(platform, bookId, manifest.spine[spineIndex].href)}
-        sandbox="allow-scripts allow-same-origin"
-        allow="fullscreen; autoplay"
-      />
+      <div ref={framesBox} className="reader-frames">
+        {slots.map((index, slot) =>
+          index === null ? null : (
+            <iframe
+              key={slot}
+              ref={(element) => {
+                frameElements.current[slot] = element;
+              }}
+              className={slot === visibleSlot ? 'reader-frame' : 'reader-frame reader-frame-hidden'}
+              // Out of sight, out of reach: no focus, input or screen reader goes into a frame loaded ahead.
+              inert={slot !== visibleSlot}
+              title={manifest.title}
+              src={bookUrl(platform, bookId, manifest.spine[index].href)}
+              sandbox="allow-scripts allow-same-origin"
+              allow="fullscreen; autoplay"
+              onLoad={() => frameLoaded(slot)}
+            />
+          ),
+        )}
+      </div>
       {showWait && (
         <div className="reader-wait" role="status" aria-label="Getting the page ready">
           <div className="reader-wait-sky">

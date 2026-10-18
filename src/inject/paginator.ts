@@ -234,6 +234,38 @@ import { findRange } from '../core/textsearch';
     true,
   );
 
+  // --- Out of sight: a document loaded ahead of the reader keeps its sound to itself until it is shown ------
+
+  /** Until the app says so, as the document may be loaded ahead of the reader. */
+  let shown = false;
+  /** Audio and video paused because the document was out of sight, to play once it is shown. */
+  const heldMedia = new Set<HTMLMediaElement>();
+
+  function setShown(on: boolean) {
+    shown = on;
+    if (on) {
+      for (const media of heldMedia) void media.play().catch(() => {});
+      heldMedia.clear();
+    } else {
+      for (const media of Array.from(document.querySelectorAll<HTMLMediaElement>('audio, video'))) holdMedia(media);
+    }
+  }
+
+  function holdMedia(media: HTMLMediaElement) {
+    if (media.paused) return;
+    media.pause();
+    heldMedia.add(media);
+  }
+
+  // Media starting out of sight (autoplay, or started by a script) waits until the document is shown.
+  document.addEventListener(
+    'play',
+    (event) => {
+      if (!shown && event.target instanceof HTMLMediaElement) holdMedia(event.target);
+    },
+    true,
+  );
+
   // --- Search matches: highlighted with the CSS Custom Highlight API, which leaves the DOM untouched ---
 
   const HIGHLIGHT = 'ereader-search';
@@ -404,6 +436,7 @@ import { findRange } from '../core/textsearch';
     else if (data.type === 'clearSearch') endSearch();
     else if (data.type === 'zoom' && Number.isFinite(data.zoom) && Number.isFinite(data.panX)) setFixedZoom(data.zoom, data.panX);
     else if (data.type === 'hand') setHand(data.on === true);
+    else if (data.type === 'shown') setShown(data.shown === true);
   });
 
   // --- Layout tracking -------------------------------------------------------------------------
