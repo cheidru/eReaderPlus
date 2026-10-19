@@ -114,8 +114,40 @@
   min-height: 3.25rem;
 }
 
-.reader-toolbar-space {
+/* The library's shelf tabs, in the bar's colors: one goes back to the library onto that shelf. */
+.reader-tabs {
+  --shelf-pill: color-mix(in srgb, var(--bar-text) 12%, transparent);
+  --shelf-pill-active: color-mix(in srgb, var(--bar-text) 24%, transparent);
+  --shelf-text: var(--bar-text);
+  --shelf-muted: var(--bar-muted);
   flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  padding: 0 0.5rem;
+}
+
+.reader-actions {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.reader-tabs .pill-tab:hover {
+  color: var(--bar-text);
+}
+
+/* Phones: the tabs get a row of their own under the buttons. */
+@media (max-width: 30rem) {
+  .reader-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .reader-tabs {
+    order: 1;
+    flex-basis: 100%;
+    padding: 0 0 0.5rem;
+  }
 }
 
 .reader-heading {
@@ -143,21 +175,32 @@
 
 /* On short windows (landscape phones, small desktop windows) keep the page as tall as possible. */
 @media (max-height: 34rem) {
+  /* One row: back, the tabs, the title, then the buttons. */
+  .reader-top {
+    display: flex;
+    align-items: center;
+    padding-bottom: 0;
+  }
+
   .reader-toolbar {
-    min-height: 2.75rem;
+    display: contents;
+  }
+
+  .reader-tabs {
+    order: 0;
+    flex: none;
+    max-width: 50%;
+    padding: 0 0.25rem;
   }
 
   .reader-heading {
-    position: absolute;
-    top: var(--safe-top);
-    left: calc(3.25rem + var(--safe-left));
-    right: calc(6.5rem + var(--safe-right));
+    flex: 1;
     height: 2.75rem;
     justify-content: center;
   }
 
-  .reader-top {
-    padding-bottom: 0;
+  .reader-actions {
+    order: 1;
   }
 
   .reader-subtitle {

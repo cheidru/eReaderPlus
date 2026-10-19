@@ -11,11 +11,13 @@ import { splitFragment } from '../../core/paths';
 import { loadPdfLibrary, PDF_SOURCE } from '../../core/pdf';
 import { openPdfRenderer } from '../../core/pdf-common';
 import { PdfPageStore } from '../../core/pdf-pages';
+import type { Shelf } from '../../core/shelves';
 import { hasPageSpreads, spreadEnd, spreadFits, spreadStart } from '../../core/spread';
 import { FONT_SCALE_MAX, FONT_SCALE_MIN, FONT_SCALE_STEP, type BookManifest, type Progress, type ReaderSettings, type TocItem } from '../../core/types';
 import { bookUrl, type Platform } from '../../platform';
 import { GalaxySpinner } from '../GalaxySpinner';
 import { Icon } from '../icons';
+import { ShelfTabs } from '../library/ShelfTabs';
 import { MIN_QUERY_LENGTH, NO_SEARCH, SearchPanel, type SearchState } from './SearchPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { TocPanel } from './TocPanel';
@@ -27,6 +29,8 @@ interface Props {
   settings: ReaderSettings;
   onSettingsChange: (settings: ReaderSettings) => void;
   onClose: () => void;
+  /** A shelf tab in the top bar: closes the book and shows that shelf. */
+  onShelf: (shelf: Shelf) => void;
   onError: (message: string) => void;
 }
 
@@ -64,7 +68,7 @@ const WAIT_SPINNER_DELAY_MS = 300;
 /** Above this many documents, chapter marks on the position slider would merge into a solid bar. */
 const MAX_SLIDER_MARKS = 120;
 
-export function ReaderView({ platform, bookId, settings: appSettings, onSettingsChange, onClose, onError }: Props) {
+export function ReaderView({ platform, bookId, settings: appSettings, onSettingsChange, onClose, onShelf, onError }: Props) {
   const [manifest, setManifest] = useState<BookManifest | null>(null);
   /** This book's own one or two page view (and cover alone), saved with the book. */
   const [bookView, setBookView] = useState<BookView | null>(null);
@@ -670,31 +674,35 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
               <button type="button" className="icon-button" onClick={onClose} aria-label="Back to library">
                 <Icon name="back" />
               </button>
-              <span className="reader-toolbar-space" />
-              {isSearchable(manifest) && (
-                <button type="button" className="icon-button" onClick={() => setPanel(panel === 'search' ? null : 'search')} aria-label="Search in book" aria-expanded={panel === 'search'}>
-                  <Icon name="search" />
+              <div className="reader-tabs">
+                <ShelfTabs onSelect={onShelf} />
+              </div>
+              <div className="reader-actions">
+                {isSearchable(manifest) && (
+                  <button type="button" className="icon-button" onClick={() => setPanel(panel === 'search' ? null : 'search')} aria-label="Search in book" aria-expanded={panel === 'search'}>
+                    <Icon name="search" />
+                  </button>
+                )}
+                {canSpread && (
+                  <button
+                    type="button"
+                    className="icon-button"
+                    onClick={() => changeSettings({ ...settings, spread: !settings.spread })}
+                    disabled={!spreadApplies}
+                    aria-label="Two-page view"
+                    aria-pressed={settings.spread}
+                    title={settings.spread ? 'Two pages side by side in landscape. Show one page' : 'One page. Show two pages side by side in landscape'}
+                  >
+                    <Icon name={settings.spread ? 'twoPages' : 'onePage'} />
+                  </button>
+                )}
+                <button type="button" className="icon-button" onClick={() => setPanel(panel === 'toc' ? null : 'toc')} aria-label="Contents" aria-expanded={panel === 'toc'}>
+                  <Icon name="toc" />
                 </button>
-              )}
-              {canSpread && (
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => changeSettings({ ...settings, spread: !settings.spread })}
-                  disabled={!spreadApplies}
-                  aria-label="Two-page view"
-                  aria-pressed={settings.spread}
-                  title={settings.spread ? 'Two pages side by side in landscape. Show one page' : 'One page. Show two pages side by side in landscape'}
-                >
-                  <Icon name={settings.spread ? 'twoPages' : 'onePage'} />
+                <button type="button" className="icon-button" onClick={() => setPanel(panel === 'settings' ? null : 'settings')} aria-label="Display settings" aria-expanded={panel === 'settings'}>
+                  <Icon name="settings" />
                 </button>
-              )}
-              <button type="button" className="icon-button" onClick={() => setPanel(panel === 'toc' ? null : 'toc')} aria-label="Contents" aria-expanded={panel === 'toc'}>
-                <Icon name="toc" />
-              </button>
-              <button type="button" className="icon-button" onClick={() => setPanel(panel === 'settings' ? null : 'settings')} aria-label="Display settings" aria-expanded={panel === 'settings'}>
-                <Icon name="settings" />
-              </button>
+              </div>
             </div>
             <div className="reader-heading">
               <span className="reader-title">{manifest.title}</span>

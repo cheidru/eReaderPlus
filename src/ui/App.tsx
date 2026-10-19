@@ -17,7 +17,7 @@ import {
 import { checkForAppUpdate, UPDATE_DISMISSED_KEY, type AppUpdate } from '../core/app-updates';
 import { loadWatchedFolders, saveWatchedFolders, scanWatchedFolders, withFolder, type ScanResult } from '../core/folders';
 import type { ImportPreview } from '../core/import';
-import type { LibraryLocation } from '../core/shelves';
+import type { LibraryLocation, Shelf } from '../core/shelves';
 import { DEFAULT_LIBRARY_PREFS, DEFAULT_SETTINGS, type EntryFlags, type LibraryEntry, type LibraryPrefs, type ReaderSettings } from '../core/types';
 import { detectPlatform, type EngineInfo, type FileRef } from '../platform';
 import { AboutDialog } from './AboutDialog';
@@ -266,6 +266,13 @@ export function App() {
     void refreshLibrary();
   }
 
+  /** A shelf tab in the reader's top bar: closes the book onto that shelf. */
+  function readerToShelf(shelf: Shelf) {
+    setLocation({ shelf });
+    setView({ kind: 'library' });
+    void refreshLibrary();
+  }
+
   const updatePrefs = (next: LibraryPrefs) => {
     setPrefs(next);
     void saveLibraryPrefs(platform, next);
@@ -392,6 +399,7 @@ export function App() {
           settings={settings}
           onSettingsChange={updateSettings}
           onClose={closeReader}
+          onShelf={readerToShelf}
           onError={setError}
         />
       ) : view.kind === 'settings' ? (

@@ -446,48 +446,6 @@
   justify-content: center;
 }
 
-.pill-tabs {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.1rem;
-  max-width: 100%;
-  padding: 0.2rem;
-  border-radius: 999px;
-  background: var(--shelf-pill);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.pill-tab {
-  appearance: none;
-  padding: 0.45rem 1.1rem;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--shelf-muted);
-  font: inherit;
-  font-size: 0.95rem;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.pill-tab[aria-current='page'] {
-  background: var(--shelf-pill-active);
-  color: var(--shelf-text);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
-}
-
-.pill-tabs .icon-button {
-  min-width: 2.3rem;
-  min-height: 2.3rem;
-}
-
-.pill-tabs .icon {
-  width: 1.3rem;
-  height: 1.3rem;
-}
-
 @media (max-width: 30rem) {
   .shelf-header {
     gap: 0.25rem;
@@ -497,16 +455,6 @@
 
   .shelf-header > .icon-button {
     min-width: 2.25rem;
-  }
-
-  .pill-tab {
-    padding: 0.4rem 0.6rem;
-    font-size: 0.82rem;
-  }
-
-  .pill-tabs .icon-button {
-    min-width: 2rem;
-    min-height: 2rem;
   }
 }
 

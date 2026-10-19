@@ -24,6 +24,7 @@ import { Icon, type IconName } from '../icons';
 import { FolderAccessPrompt } from '../pages/FolderPicker';
 import { BookCard, ImportingItem, ShelfTile, type ImportingBook } from './BookItems';
 import { DRAWER_SHELVES, locationTitle, percentRead, SHELVES, SORT_LABELS, type BookHandlers } from './shelfInfo';
+import { SHELF_TABS, ShelfTabs } from './ShelfTabs';
 import './LibraryView.css';
 
 interface Props {
@@ -50,10 +51,6 @@ interface Props {
 }
 
 type Menu = { kind: 'main' | 'sort'; anchor: HTMLElement } | { kind: 'book'; anchor: HTMLElement; entry: LibraryEntry };
-
-/** The three shelves on the iPad-style tab bar; the drawer reaches the rest. */
-const SHELF_TABS: Shelf[] = ['reading', 'all', 'collections'];
-const SHELF_TAB_LABELS: Partial<Record<Shelf, string>> = { all: 'Library' };
 
 export function LibraryView(props: Props) {
   const { platform, entries, collections, prefs, location, onLocationChange, onPrefsChange, books } = props;
@@ -186,20 +183,9 @@ export function LibraryView(props: Props) {
           {search !== null ? (
             searchField
           ) : (
-            <nav className="pill-tabs" aria-label="Shelves">
-              {SHELF_TABS.map((shelf) => (
-                <button
-                  key={shelf}
-                  type="button"
-                  className="pill-tab"
-                  aria-current={location.shelf === shelf && !inGroup ? 'page' : undefined}
-                  onClick={() => goTo({ shelf })}
-                >
-                  {SHELF_TAB_LABELS[shelf] ?? SHELVES[shelf].label}
-                </button>
-              ))}
+            <ShelfTabs current={inGroup ? undefined : location.shelf} onSelect={(shelf) => goTo({ shelf })}>
               {searchButton}
-            </nav>
+            </ShelfTabs>
           )}
         </div>
         <FormatsButton filter={prefs.filter} onChange={(filter) => onPrefsChange({ ...prefs, filter })} />
