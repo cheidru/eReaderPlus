@@ -50,8 +50,9 @@ interface FrameState {
   /** The paginator has announced itself and been sent the settings. */
   ready: boolean;
   /**
-   * Whether the document shows its content: once its paginator announces itself, or for DjVu once the app has sent
-   * it its page (decoding a page can take a while). The galaxy spinner shows while the current document doesn't.
+   * Whether the document shows its content: once its paginator announces itself, or for PDF and DjVu once the app has
+   * sent it its page (drawing or decoding a page can take a while). The galaxy spinner shows while the current
+   * document doesn't.
    */
   shown: boolean;
 }
@@ -65,6 +66,11 @@ const WHEEL_SPIN_MS = 1000;
 const SEARCH_DELAY_MS = 300;
 /** A page that takes longer than this to show gets the galaxy spinner; quicker ones don't flash it. */
 const WAIT_SPINNER_DELAY_MS = 300;
+/**
+ * A document that has loaded is taken to have no paginator once it hasn't announced itself for this long: the
+ * paginator's announcement can arrive after the frame's load event.
+ */
+const READY_GRACE_MS = 500;
 /** Above this many documents, chapter marks on the position slider would merge into a solid bar. */
 const MAX_SLIDER_MARKS = 120;
 
@@ -245,9 +251,15 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
   /** Sends a PDF page document (in frame `slot`) the page it asked for; a count of 0 tells it to draw its pages itself. */
   const answerPdfPage = useCallback(
     (slot: number, page: number, scale: number) => {
+      const frame = frames.current[slot];
       const reply = (count: number, rtl: boolean, data: PdfPageData | null) => {
         const message: HostMessage = { tag: MESSAGE_TAG, type: 'pdfPage', page, scale, count, rtl, data };
         frameElements.current[slot]?.contentWindow?.postMessage(message, origin);
+        // PDF page documents are the spine documents, one per page.
+        if (!frame.shown && (count === 0 || (frame.index !== null && page === frame.index + 1))) {
+          frame.shown = true;
+          setFramesChanged((n) => n + 1);
+        }
       };
       const store = pdfPages.current;
       if (!store) return reply(0, false, null);
@@ -376,9 +388,13 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
     (slot: number) => {
       const frame = frames.current[slot];
       if (frame.ready || frame.index === null) return;
-      frame.shown = true;
-      if (frame.index === spineIndexRef.current) showSlot(slot);
-      setFramesChanged((n) => n + 1);
+      window.setTimeout(() => {
+        // Not if it has announced itself meanwhile, or the frame has been given another document.
+        if (frame.ready || frames.current[slot] !== frame) return;
+        frame.shown = true;
+        if (frame.index === spineIndexRef.current) showSlot(slot);
+        setFramesChanged((n) => n + 1);
+      }, READY_GRACE_MS);
     },
     [showSlot],
   );
@@ -439,7 +455,7 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
       switch (message.type) {
         case 'ready': {
           frame.ready = true;
-          if (manifest.format !== 'djvu') frame.shown = true;
+          if (manifest.format !== 'djvu' && manifest.format !== 'pdf') frame.shown = true;
           const docSettings = frameSettings(frame.index);
           if (docSettings) postTo(slot, { tag: MESSAGE_TAG, type: 'settings', settings: docSettings });
           postTo(slot, { tag: MESSAGE_TAG, type: 'goto', target: frame.target });
