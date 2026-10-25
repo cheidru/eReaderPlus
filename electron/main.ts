@@ -3,7 +3,7 @@ import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { IPC } from '../src/platform/electron-api';
 import * as bookstore from './bookstore';
-import { findBookFiles, listFolder } from './folders';
+import { fileStat, findBookFiles, listFolder } from './folders';
 import { kvGet, kvSet } from './kv';
 import { APP_ORIGIN, registerProtocols, registerSchemes } from './protocols';
 import { hardenAllWebContents, hardenSession, isAppUrl } from './security';
@@ -134,6 +134,7 @@ function registerIpc(): void {
   });
   handle(IPC.extractArchive, (file: string, bookId: string) => bookstore.extractArchive(file, bookId));
   handle(IPC.copyRawFile, (file: string, bookId: string, dest: string) => bookstore.copyRawFile(file, bookId, dest));
+  handle(IPC.fileStat, (file: string) => fileStat(String(file)));
   handle(IPC.readText, (bookId: string, rel: string) => bookstore.readText(bookId, rel));
   handle(IPC.readBinary, (bookId: string, rel: string) => bookstore.readBinary(bookId, rel));
   handle(IPC.writeText, (bookId: string, rel: string, text: string) => bookstore.writeFileInBook(bookId, rel, text));

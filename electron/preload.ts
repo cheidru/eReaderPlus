@@ -19,6 +19,7 @@ const api: ElectronNativeApi = {
   installUpdate: () => ipcRenderer.invoke(IPC.installUpdate),
   extractArchive: (path, bookId) => ipcRenderer.invoke(IPC.extractArchive, path, bookId),
   copyRawFile: (path, bookId, dest) => ipcRenderer.invoke(IPC.copyRawFile, path, bookId, dest),
+  fileStat: (path) => ipcRenderer.invoke(IPC.fileStat, path),
   readText: (bookId, path) => ipcRenderer.invoke(IPC.readText, bookId, path),
   readBinary: (bookId, path) => ipcRenderer.invoke(IPC.readBinary, bookId, path),
   writeText: (bookId, path, text) => ipcRenderer.invoke(IPC.writeText, bookId, path, text),

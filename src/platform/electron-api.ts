@@ -1,4 +1,4 @@
-import type { FolderListing, FoundBookFile } from './platform';
+import type { FileStat, FolderListing, FoundBookFile } from './platform';
 
 /** The API the Electron preload script exposes as `window.ereaderNative`. */
 export interface ElectronNativeApi {
@@ -8,6 +8,7 @@ export interface ElectronNativeApi {
   takePendingOpenFiles(): Promise<string[]>;
   extractArchive(path: string, bookId: string): Promise<string[]>;
   copyRawFile(path: string, bookId: string, dest: string): Promise<void>;
+  fileStat(path: string): Promise<FileStat | null>;
   readText(bookId: string, path: string): Promise<string>;
   readBinary(bookId: string, path: string): Promise<Uint8Array>;
   writeText(bookId: string, path: string, text: string): Promise<void>;
@@ -34,6 +35,7 @@ export const IPC = {
   takePendingOpenFiles: 'ereader:take-pending-open-files',
   extractArchive: 'ereader:extract-archive',
   copyRawFile: 'ereader:copy-raw-file',
+  fileStat: 'ereader:file-stat',
   readText: 'ereader:read-text',
   readBinary: 'ereader:read-binary',
   writeText: 'ereader:write-text',

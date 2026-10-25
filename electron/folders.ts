@@ -3,7 +3,7 @@ import type { Dirent } from 'node:fs';
 import { access, readdir, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { FolderEntry, FolderListing, FoundBookFile } from '../src/platform/platform';
+import type { FileStat, FolderEntry, FolderListing, FoundBookFile } from '../src/platform/platform';
 
 /** Deeper than this is almost certainly not a book collection (and guards against pathological trees). */
 const MAX_DEPTH = 16;
@@ -134,4 +134,10 @@ export async function findBookFiles(folder: string, extensions: string[]): Promi
   };
   await walk(folder, 0);
   return found;
+}
+
+/** A file's size and modification time; null when it is missing or not a file. */
+export async function fileStat(file: string): Promise<FileStat | null> {
+  const info = await stat(file).catch(() => null);
+  return info?.isFile() ? { size: info.size, modified: info.mtimeMs } : null;
 }

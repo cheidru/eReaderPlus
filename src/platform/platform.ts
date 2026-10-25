@@ -45,6 +45,12 @@ export interface FoundBookFile {
   modified: number;
 }
 
+/** A file's size and modification time (ms since the epoch), which tell whether it changed. */
+export interface FileStat {
+  size: number;
+  modified: number;
+}
+
 /** Oldest Chromium major the reader is tested against. */
 export const MIN_ENGINE_MAJOR = 120;
 
@@ -57,8 +63,13 @@ export interface Platform {
   pickBookFile(): Promise<FileRef | null>;
   /** Converts a File dropped onto the window into a FileRef, when the platform supports it. */
   fileFromDrop(file: File): FileRef | null;
-  /** Subscribes to files opened from the OS ("Open with", double-click). Delivers pending files immediately. */
-  onOpenFile(listener: (file: FileRef) => void): () => void;
+  /**
+   * Subscribes to files opened from the OS ("Open with", double-click). Delivers pending files immediately, after
+   * telling `onPending` how many there are (the app was started to open them).
+   */
+  onOpenFile(listener: (file: FileRef) => void, onPending?: (count: number) => void): () => void;
+  /** The file's size and modification time, where the platform can read them: desktop. Null when it can't be read. */
+  fileStat?(file: FileRef): Promise<FileStat | null>;
   /** Unzips an archive into the book's folder natively. Returns the extracted file paths. */
   extractArchive(file: FileRef, bookId: string): Promise<string[]>;
   copyRawFile(file: FileRef, bookId: string, path: string): Promise<void>;

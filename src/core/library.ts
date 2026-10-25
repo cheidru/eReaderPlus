@@ -1,4 +1,4 @@
-import type { FileRef, Platform } from '../platform/platform';
+import type { FileRef, FileStat, Platform } from '../platform/platform';
 import { platformBookFs } from './bookfs';
 import { findPackagePath } from './epub';
 import { decodeFb2 } from './fb2';
@@ -48,7 +48,7 @@ function updateLibrary<T>(platform: Platform, update: (entries: LibraryEntry[]) 
   return run;
 }
 
-function entryFor(manifest: BookManifest, file: FileRef, opened: boolean): LibraryEntry {
+function entryFor(manifest: BookManifest, file: FileRef, stat: FileStat | null, opened: boolean): LibraryEntry {
   const now = Date.now();
   return {
     id: manifest.id,
@@ -62,6 +62,7 @@ function entryFor(manifest: BookManifest, file: FileRef, opened: boolean): Libra
     lastOpenedAt: opened ? now : 0,
     progress: 0,
     source: file.ref,
+    sourceStat: stat ?? undefined,
     fileName: file.name,
   };
 }
@@ -82,17 +83,35 @@ export async function addBook(
   file: FileRef,
   { opened = true, onPreview }: { opened?: boolean; onPreview?: (preview: ImportPreview) => void } = {},
 ): Promise<AddedBook> {
+  // Read before the file is: a change made while it is imported shows the next time it is opened.
+  const stat = (await platform.fileStat?.(file)) ?? null;
   const manifest = await importBook(platform, file, onPreview);
-  const entry = entryFor(manifest, file, opened);
+  const entry = entryFor(manifest, file, stat, opened);
   const existing = await updateLibrary(platform, (entries) => {
     const found = entries.find((e) => e.format === manifest.format && e.identifier === manifest.identifier);
-    return [found ? entries : [entry, ...entries], found ?? null];
+    if (!found) return [[entry, ...entries], null];
+    // The book is the one in this file: opening the file again opens it without importing it (bookFromFile).
+    const updated = { ...found, source: file.ref, sourceStat: stat ?? undefined };
+    return [entries.map((e) => (e === found ? updated : e)), updated];
   });
   if (existing) {
     void platform.deleteBook(manifest.id).catch(() => {});
     return { entry: existing, isNew: false };
   }
   return { entry, isNew: true };
+}
+
+/**
+ * The book imported from `file`, to open instead of importing the file again: only while the file is unchanged since,
+ * where the platform can tell. Where it can't (Android), `unchecked` says whether the book counts anyway.
+ */
+export async function bookFromFile(platform: Platform, file: FileRef, { unchecked }: { unchecked: boolean }): Promise<LibraryEntry | null> {
+  // A file changed since may have been imported again as another book: the newest comes first.
+  const imported = (await loadLibrary(platform)).filter((e) => e.source === file.ref);
+  if (imported.length === 0) return null;
+  if (!platform.fileStat) return unchecked ? imported[0] : null;
+  const stat = await platform.fileStat(file);
+  return (stat && imported.find((e) => e.sourceStat?.size === stat.size && e.sourceStat.modified === stat.modified)) || null;
 }
 
 /**

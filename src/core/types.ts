@@ -1,3 +1,5 @@
+import type { FileStat } from '../platform/platform';
+
 /** 'mobi' is MOBI 6 (also old AZW), 'azw3' is KF8 (also the KF8 half of combined MOBI files). */
 export type BookFormat = 'epub' | 'fb2' | 'cbz' | 'mobi' | 'azw3' | 'djvu' | 'pdf' | 'chm' | 'lit' | 'md';
 
@@ -85,6 +87,8 @@ export interface LibraryEntry {
   series?: Series;
   /** The file the book was imported from (FileRef.ref), so opening that file again opens this book. */
   source?: string;
+  /** That file's size and modification time then, where the platform can read them: a changed file is imported again. */
+  sourceStat?: FileStat;
   /** Name of the file the book was imported from (missing for books imported before it was recorded). */
   fileName?: string;
   favorite?: boolean;

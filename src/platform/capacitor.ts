@@ -51,9 +51,15 @@ export function createCapacitorPlatform(): Platform {
       return (await BookStore.pickBookFile()).file;
     },
     fileFromDrop: () => null,
-    onOpenFile(listener) {
+    onOpenFile(listener, onPending) {
       const handle = BookStore.addListener('openFile', listener);
-      void BookStore.takePendingOpenFiles().then(({ files }) => files.forEach(listener));
+      void BookStore.takePendingOpenFiles().then(
+        ({ files }) => {
+          onPending?.(files.length);
+          files.forEach(listener);
+        },
+        () => onPending?.(0),
+      );
       return () => void handle.then((h) => h.remove());
     },
     async extractArchive(file, bookId) {

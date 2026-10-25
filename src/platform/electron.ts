@@ -20,13 +20,20 @@ export function createElectronPlatform(api: ElectronNativeApi): Platform {
       const path = api.getPathForFile(file);
       return path ? toRef(path) : null;
     },
-    onOpenFile(listener) {
+    onOpenFile(listener, onPending) {
       const unsubscribe = api.onOpenFile((path) => listener(toRef(path)));
-      void api.takePendingOpenFiles().then((paths) => paths.forEach((p) => listener(toRef(p))));
+      void api.takePendingOpenFiles().then(
+        (paths) => {
+          onPending?.(paths.length);
+          paths.forEach((p) => listener(toRef(p)));
+        },
+        () => onPending?.(0),
+      );
       return unsubscribe;
     },
     extractArchive: (file, bookId) => api.extractArchive(file.ref, bookId),
     copyRawFile: (file, bookId, path) => api.copyRawFile(file.ref, bookId, path),
+    fileStat: (file) => api.fileStat(file.ref),
     // A file's ref is its path on desktop; Windows takes '/' as a separator too.
     siblingFile: (file, relative) => toRef(file.ref.slice(0, Math.max(file.ref.lastIndexOf('/'), file.ref.lastIndexOf('\\')) + 1) + relative),
     readText: api.readText,

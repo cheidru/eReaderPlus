@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } fro
 import {
   addBook,
   backfillSeries,
+  bookFromFile,
   deleteCollection,
   loadCollections,
   loadLibrary,
@@ -89,6 +90,11 @@ export function App() {
   const [waitingFor, setWaitingFor] = useState<string | null>(null);
   const waitingRef = useRef(waitingFor);
   waitingRef.current = waitingFor;
+  /**
+   * Until the files the app was started to open are known, and the first of them is found in the library or being
+   * imported, the library is not drawn: a book opened from the OS shows without the library showing first.
+   */
+  const [launching, setLaunching] = useState(true);
   const back = useRef<() => boolean>(() => false);
 
   const refreshLibrary = useCallback(async () => {
@@ -149,6 +155,20 @@ export function App() {
     [platform, refreshLibrary, showImporting, showNotice],
   );
 
+  /**
+   * Reads a book file: the book imported from it, without importing it again, while the file is unchanged since
+   * (`unchecked`: see bookFromFile); else imports it and opens it once imported.
+   */
+  const readFile = useCallback(
+    async (file: FileRef, { unchecked }: { unchecked: boolean }) => {
+      if (!platform) return;
+      const imported = await bookFromFile(platform, file, { unchecked }).catch(() => null);
+      if (imported) setView({ kind: 'reader', bookId: imported.id, from: 'library' });
+      else void openFile(file, { open: true });
+    },
+    [platform, openFile],
+  );
+
   /** Imports new books from the watched folders, with progress in a snackbar, like ReadEra's file scan. */
   const runScan = useCallback(async () => {
     if (!platform) return;
@@ -194,8 +214,11 @@ export function App() {
     void loadSettings(platform).then(setSettings);
     void loadLibraryPrefs(platform).then(setPrefs);
     void platform.engineInfo().then(setEngine);
-    return platform.onOpenFile((file) => void openFile(file, { open: true }));
-  }, [platform, refreshLibrary, openFile, runScan]);
+    return platform.onOpenFile(
+      (file) => void readFile(file, { unchecked: false }).finally(() => setLaunching(false)),
+      (count) => count === 0 && setLaunching(false),
+    );
+  }, [platform, refreshLibrary, readFile, runScan]);
 
   // Android's back button steps back through dialogs, pages and library groups before leaving the app.
   back.current = () => {
@@ -455,7 +478,7 @@ export function App() {
             setView({ kind: 'library' });
           }}
         />
-      ) : (
+      ) : launching ? null : (
         <LibraryView
           platform={platform}
           entries={entries}
@@ -467,11 +490,7 @@ export function App() {
           onLocationChange={setLocation}
           onPrefsChange={updatePrefs}
           books={books}
-          onOpenFile={(file) => {
-            const existing = entries.find((e) => e.source === file.ref);
-            if (existing) books.onOpen(existing.id);
-            else void openFile(file, { open: true });
-          }}
+          onOpenFile={(file) => void readFile(file, { unchecked: true })}
           onAdd={() => void pickFile()}
           onCreateCollection={() => setModal({ kind: 'newCollection' })}
           onDeleteCollection={(name) =>
