@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyFilter, booksAt, groupsOf, isFilterActive, isFormatShown, NO_AUTHOR, shownExtensions, sortAt, sortEntries, toggleAllFormats, toggleFormat } from '../src/core/shelves';
+import { applyFilter, booksAt, groupsOf, isFilterActive, isFormatShown, isReading, NO_AUTHOR, shownExtensions, sortAt, sortEntries, toggleAllFormats, toggleFormat } from '../src/core/shelves';
 import { ALL_FORMATS } from '../src/core/types';
 import type { LibraryEntry } from '../src/core/types';
 
@@ -17,12 +17,20 @@ const ids = (list: LibraryEntry[]) => list.map((e) => e.id);
 
 describe('shelves', () => {
   it('puts books on shelves by their flags', () => {
-    // Children of Dune was never opened (found by a folder scan), Emma is finished.
-    expect(ids(booksAt(books, { shelf: 'reading' }))).toEqual(['Dune', 'anonymous']);
+    // Children of Dune was never opened (found by a folder scan), Emma is finished, anonymous waits under To read.
+    expect(ids(booksAt(books, { shelf: 'reading' }))).toEqual(['Dune']);
     expect(ids(booksAt(books, { shelf: 'favorites' }))).toEqual(['Dune']);
     expect(ids(booksAt(books, { shelf: 'toRead' }))).toEqual(['anonymous']);
     expect(ids(booksAt(books, { shelf: 'finished' }))).toEqual(['Emma']);
     expect(booksAt(books, { shelf: 'all' })).toHaveLength(4);
+  });
+
+  it('keeps a book on Reading now as the reader chose, never together with To read or finished', () => {
+    expect(isReading(entry('opened', { lastOpenedAt: 1 }))).toBe(true);
+    expect(isReading(entry('taken off', { lastOpenedAt: 1, reading: false }))).toBe(false);
+    expect(isReading(entry('put on before opening', { reading: true }))).toBe(true);
+    expect(isReading(entry('to read', { reading: true, toRead: true }))).toBe(false);
+    expect(isReading(entry('finished', { reading: true, finished: true }))).toBe(false);
   });
 
   it('lists the books of a group, and none for a group shelf without a group', () => {

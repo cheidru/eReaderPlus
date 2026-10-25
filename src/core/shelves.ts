@@ -27,11 +27,18 @@ export function isGroupShelf(shelf: Shelf): shelf is GroupShelf {
   return shelf === 'authors' || shelf === 'series' || shelf === 'collections' || shelf === 'formats';
 }
 
+/**
+ * Whether a book is on Reading now: put there by the reader, or else once opened (books found by a folder scan wait
+ * under Books until then). A book waiting under To read or finished is not.
+ */
+export function isReading(entry: LibraryEntry): boolean {
+  return !entry.finished && !entry.toRead && (entry.reading ?? entry.lastOpenedAt > 0);
+}
+
 export function onShelf(entry: LibraryEntry, shelf: BookShelf): boolean {
   switch (shelf) {
     case 'reading':
-      // Books found by a folder scan wait under Books until they are first opened.
-      return !entry.finished && entry.lastOpenedAt > 0;
+      return isReading(entry);
     case 'all':
       return true;
     case 'favorites':

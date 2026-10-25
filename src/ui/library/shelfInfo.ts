@@ -45,7 +45,7 @@ export function percentRead(entry: LibraryEntry): number {
 }
 
 /** The flags a reader toggles with one tap. */
-export type ToggleFlag = 'favorite' | 'toRead' | 'finished';
+export type ToggleFlag = 'favorite' | 'reading' | 'toRead' | 'finished';
 
 /** What can be done to a book from anywhere in the library or its details page. */
 export interface BookHandlers {

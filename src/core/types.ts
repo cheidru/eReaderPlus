@@ -92,6 +92,11 @@ export interface LibraryEntry {
   /** Name of the file the book was imported from (missing for books imported before it was recorded). */
   fileName?: string;
   favorite?: boolean;
+  /**
+   * On the "Reading now" shelf as the reader chose; unset, a book is there once it has been opened. Never together
+   * with To read, and finished books leave it (see isReading).
+   */
+  reading?: boolean;
   /** On the "To read" shelf. */
   toRead?: boolean;
   /** On the "Finished" shelf; finished books leave "Reading now". */
@@ -101,7 +106,7 @@ export interface LibraryEntry {
 }
 
 /** The flags a reader toggles on a book from the library. */
-export type EntryFlags = Pick<LibraryEntry, 'favorite' | 'toRead' | 'finished' | 'collections'>;
+export type EntryFlags = Pick<LibraryEntry, 'favorite' | 'reading' | 'toRead' | 'finished' | 'collections'>;
 
 export type LibraryLayout = 'cards' | 'shelf';
 export type AppTheme = 'dark' | 'light';

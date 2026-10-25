@@ -1,5 +1,5 @@
 import type { ImportPreview } from '../../core/import';
-import { formatLabel } from '../../core/shelves';
+import { formatLabel, isReading } from '../../core/shelves';
 import type { LibraryEntry, LibraryLayout } from '../../core/types';
 import { bookUrl, type Platform } from '../../platform';
 import { Icon } from '../icons';
@@ -36,13 +36,16 @@ export function Cover({ platform, entry }: { platform: Platform; entry: LibraryE
   return <CoverPlaceholder title={entry.title} author={entry.authors[0]} drawing={false} />;
 }
 
-/** Star, clock, double check and collections: the toggles ReadEra puts on every book. */
+/** Star, glasses, bookmark, double check and collections: the toggles ReadEra puts on every book. */
 export function BookToggles({ entry, books }: { entry: LibraryEntry; books: BookHandlers }) {
   const inCollection = (entry.collections?.length ?? 0) > 0;
   return (
     <>
       <button type="button" className="icon-button toggle" aria-pressed={!!entry.favorite} aria-label="Favorite" title="Favorite" onClick={() => books.onToggle(entry.id, 'favorite')}>
         <Icon name={entry.favorite ? 'star' : 'starOutline'} />
+      </button>
+      <button type="button" className="icon-button toggle" aria-pressed={isReading(entry)} aria-label="Reading now" title="Reading now" onClick={() => books.onToggle(entry.id, 'reading')}>
+        <Icon name="readingNow" />
       </button>
       <button type="button" className="icon-button toggle" aria-pressed={!!entry.toRead} aria-label="To read" title="To read" onClick={() => books.onToggle(entry.id, 'toRead')}>
         <Icon name="toRead" />

@@ -18,7 +18,7 @@ import {
 import { checkForAppUpdate, UPDATE_DISMISSED_KEY, type AppUpdate } from '../core/app-updates';
 import { loadWatchedFolders, saveWatchedFolders, scanWatchedFolders, withFolder, type ScanResult } from '../core/folders';
 import type { ImportPreview } from '../core/import';
-import type { LibraryLocation, Shelf } from '../core/shelves';
+import { isReading, type LibraryLocation, type Shelf } from '../core/shelves';
 import { DEFAULT_LIBRARY_PREFS, DEFAULT_SETTINGS, type EntryFlags, type LibraryEntry, type LibraryPrefs, type ReaderSettings } from '../core/types';
 import { detectPlatform, type EngineInfo, type FileRef } from '../platform';
 import { AboutDialog } from './AboutDialog';
@@ -333,10 +333,11 @@ export function App() {
     onToggle: (bookId, flag: ToggleFlag) => {
       const entry = entries.find((e) => e.id === bookId);
       if (!entry) return;
-      const on = !entry[flag];
-      // A finished book is no longer waiting to be read, and the other way round.
+      const on = flag === 'reading' ? !isReading(entry) : !entry[flag];
+      // A book is being read, waiting to be read or finished: one of them at a time.
       if (flag === 'finished') setFlags(bookId, on ? { finished: true, toRead: false } : { finished: false });
-      else if (flag === 'toRead') setFlags(bookId, on ? { toRead: true, finished: false } : { toRead: false });
+      else if (flag === 'toRead') setFlags(bookId, on ? { toRead: true, reading: false, finished: false } : { toRead: false });
+      else if (flag === 'reading') setFlags(bookId, on ? { reading: true, toRead: false, finished: false } : { reading: false });
       else setFlags(bookId, { favorite: on });
     },
     onCollections: (bookId) => setModal({ kind: 'collections', bookId }),

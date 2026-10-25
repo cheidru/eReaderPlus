@@ -9,6 +9,7 @@ import {
   isFilterActive,
   isFormatShown,
   isGroupShelf,
+  isReading,
   shownExtensions,
   sortAt,
   toggleAllFormats,
@@ -125,6 +126,7 @@ export function LibraryView(props: Props) {
     ...(layout === 'shelf'
       ? [
           { label: entry.favorite ? 'Remove from Favorites' : 'Add to Favorites', onSelect: () => books.onToggle(entry.id, 'favorite') },
+          { label: isReading(entry) ? 'Remove from Reading now' : 'Add to Reading now', onSelect: () => books.onToggle(entry.id, 'reading') },
           { label: entry.toRead ? 'Remove from To read' : 'Add to To read', onSelect: () => books.onToggle(entry.id, 'toRead') },
           { label: entry.finished ? 'Mark as not finished' : 'Mark as finished', onSelect: () => books.onToggle(entry.id, 'finished') },
         ]
@@ -455,7 +457,7 @@ function formatSize(bytes: number): string {
 const EMPTY_MESSAGES: Partial<Record<Shelf, string>> = {
   reading: 'Nothing in progress. Books you open appear here; all your books are under Books.',
   favorites: 'Tap the star on a book to add it to Favorites.',
-  toRead: 'Tap the clock on a book to save it for later.',
+  toRead: 'Tap the bookmark on a book to save it for later.',
   finished: 'Books you mark as finished appear here.',
   series: 'No books in a series yet. Series come from the books themselves: EPUB, FB2 and comic files can name theirs.',
   collections: 'This collection is empty. Add books with the collections button on a book.',
