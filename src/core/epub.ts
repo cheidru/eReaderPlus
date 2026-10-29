@@ -18,6 +18,9 @@ interface ManifestItem {
 
 export type ParsedBook = Omit<BookManifest, 'version' | 'id' | 'format'>;
 
+/** Media types of pictures a cover can be. */
+const COVER_TYPES = /^image\/(jpeg|jpg|pjpeg|png|gif|webp|avif|bmp|svg\+xml)$/i;
+
 export async function findPackagePath(fs: BookFs): Promise<string> {
   const container = parseXml(await fs.readText(CONTAINER_PATH), CONTAINER_PATH);
   const rootfiles = all(container, 'rootfile');
@@ -144,12 +147,16 @@ export function parsePackage(opf: Document, opfPath: string): PackageInfo {
 
   const metas = all(metadata, 'meta');
   const metaProperty = (property: string) => text(metas.find((m) => attr(m, 'property') === property));
-  const coverMetaId = metas.find((m) => attr(m, 'name') === 'cover')?.getAttribute('content') ?? '';
+  // The cover meta names the cover's manifest item; some books give its path instead.
+  const coverMeta = metas.find((m) => attr(m, 'name') === 'cover')?.getAttribute('content') ?? '';
+  const coverMetaHref = coverMeta ? resolveHref(opfPath, coverMeta) : null;
   const items = [...manifest.values()];
+  // Only a picture is a cover: some books declare a web page as one (media type "image/xhtml").
+  const pictures = items.filter((i) => COVER_TYPES.test(i.mediaType));
   const cover =
-    items.find((i) => i.properties.includes('cover-image')) ??
-    manifest.get(coverMetaId) ??
-    items.find((i) => i.mediaType.startsWith('image/') && /cover/i.test(i.id + i.href));
+    pictures.find((i) => i.properties.includes('cover-image')) ??
+    pictures.find((i) => i.id === coverMeta || i.href === coverMetaHref) ??
+    pictures.find((i) => /cover/i.test(i.id + i.href));
 
   const title = text(first(metadata, 'title'));
   const parsed: ParsedBook = {
@@ -157,7 +164,7 @@ export function parsePackage(opf: Document, opfPath: string): PackageInfo {
     title: title || opfPath,
     authors: all(metadata, 'creator').map(text).filter(Boolean),
     language: text(first(metadata, 'language')),
-    cover: cover?.mediaType.startsWith('image/') ? cover.href : null,
+    cover: cover?.href ?? null,
     series: epubSeries(opf),
     layout: metaProperty('rendition:layout') === 'pre-paginated' ? 'pre-paginated' : 'reflowable',
     direction: spineEl && attr(spineEl, 'page-progression-direction') === 'rtl' ? 'rtl' : 'ltr',

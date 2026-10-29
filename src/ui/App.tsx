@@ -2,6 +2,7 @@ import { App as CapacitorApp } from '@capacitor/app';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import {
   addBook,
+  backfillCovers,
   backfillSeries,
   bookFromFile,
   deleteCollection,
@@ -206,7 +207,8 @@ export function App() {
   useEffect(() => {
     if (!platform) return;
     void refreshLibrary().then(async () => {
-      if (await backfillSeries(platform)) await refreshLibrary();
+      const [series, covers] = [await backfillSeries(platform), await backfillCovers(platform)];
+      if (series || covers) await refreshLibrary();
       const folders = await loadWatchedFolders(platform);
       setWatchedFolders(folders);
       if (folders.length > 0 && (await platform.hasFolderAccess())) await runScan();

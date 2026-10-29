@@ -1,6 +1,6 @@
 import type { FileRef, FileStat, Platform } from '../platform/platform';
 import { platformBookFs } from './bookfs';
-import { findPackagePath } from './epub';
+import { findPackagePath, parsePackage } from './epub';
 import { decodeFb2 } from './fb2';
 import { importBook, type ImportPreview } from './import';
 import { comicSeries, epubSeries, fb2Series } from './series';
@@ -25,6 +25,8 @@ const PREFS_KEY = 'library-prefs';
 const COLLECTIONS_KEY = 'collections';
 /** Set once books imported before series were read have been checked for one. */
 const SERIES_BACKFILL_KEY = 'series-backfill-done';
+/** Set once EPUB books imported before covers given by path (and web pages declared as pictures) were handled have been checked. */
+const COVER_BACKFILL_KEY = 'epub-cover-backfill-done';
 const progressKey = (bookId: string) => `progress:${bookId}`;
 const viewKey = (bookId: string) => `view:${bookId}`;
 
@@ -138,6 +140,31 @@ export async function backfillSeries(platform: Platform): Promise<boolean> {
   }
   await platform.kvSet(SERIES_BACKFILL_KEY, true);
   return found.size > 0;
+}
+
+/**
+ * EPUB books whose cover was missed (a cover meta giving the picture's path) or taken from a web page declared as a
+ * picture. Once, reads their cover again from the files kept in each book's folder. Returns true if any book got one.
+ */
+export async function backfillCovers(platform: Platform): Promise<boolean> {
+  if (await platform.kvGet<boolean>(COVER_BACKFILL_KEY)) return false;
+  const found = new Map<string, string>();
+  for (const entry of await loadLibrary(platform)) {
+    if (entry.format !== 'epub') continue;
+    const cover = await storedEpubCover(platform, entry).catch(() => null);
+    if (cover && cover !== entry.cover) found.set(entry.id, cover);
+  }
+  if (found.size > 0) {
+    await updateLibrary(platform, (entries) => [entries.map((e) => (found.has(e.id) ? { ...e, cover: found.get(e.id)! } : e)), undefined]);
+  }
+  await platform.kvSet(COVER_BACKFILL_KEY, true);
+  return found.size > 0;
+}
+
+async function storedEpubCover(platform: Platform, entry: LibraryEntry): Promise<string | null> {
+  const fs = platformBookFs(platform, entry.id, []);
+  const opfPath = await findPackagePath(fs);
+  return parsePackage(parseXml(await fs.readText(opfPath), opfPath), opfPath).parsed.cover;
 }
 
 async function storedSeries(platform: Platform, entry: LibraryEntry): Promise<Series | undefined> {

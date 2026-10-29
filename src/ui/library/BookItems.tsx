@@ -1,6 +1,8 @@
+import { useState, type MouseEvent } from 'react';
 import type { ImportPreview } from '../../core/import';
 import { formatLabel, isReading } from '../../core/shelves';
 import type { LibraryEntry, LibraryLayout } from '../../core/types';
+import type { MenuAnchor } from '../Dialogs';
 import { bookUrl, type Platform } from '../../platform';
 import { Icon } from '../icons';
 import { percentRead, seriesLabel, type BookHandlers } from './shelfInfo';
@@ -32,7 +34,11 @@ function CoverPlaceholder({ title, author, drawing }: { title: string; author?: 
 }
 
 export function Cover({ platform, entry }: { platform: Platform; entry: LibraryEntry }) {
-  if (entry.cover) return <img className="cover-img" src={bookUrl(platform, entry.id, entry.cover)} alt="" loading="lazy" draggable={false} />;
+  /** The cover that could not be shown (not a picture after all, or missing): the placeholder shows instead. */
+  const [failed, setFailed] = useState<string | null>(null);
+  if (entry.cover && entry.cover !== failed) {
+    return <img className="cover-img" src={bookUrl(platform, entry.id, entry.cover)} alt="" loading="lazy" draggable={false} onError={() => setFailed(entry.cover)} />;
+  }
   return <CoverPlaceholder title={entry.title} author={entry.authors[0]} drawing={false} />;
 }
 
@@ -64,14 +70,21 @@ interface ItemProps {
   platform: Platform;
   entry: LibraryEntry;
   books: BookHandlers;
-  onMenu: (anchor: HTMLElement, entry: LibraryEntry) => void;
+  /** Opens the book's menu: from its menu button, or where the card was right-clicked. */
+  onMenu: (anchor: MenuAnchor, entry: LibraryEntry) => void;
+}
+
+/** A right click on a book opens its menu where it was clicked. */
+function openContextMenu(event: MouseEvent, entry: LibraryEntry, onMenu: ItemProps['onMenu']) {
+  event.preventDefault();
+  onMenu({ x: event.clientX, y: event.clientY }, entry);
 }
 
 /** ReadEra-style card: cover on the left, title and details on the right, toggles along the bottom. */
 export function BookCard({ platform, entry, books, onMenu }: ItemProps) {
   const percent = percentRead(entry);
   return (
-    <li className="book-card">
+    <li className="book-card" onContextMenu={(e) => openContextMenu(e, entry, onMenu)}>
       <button type="button" className="book-open" onClick={() => books.onOpen(entry.id)} title={entry.title}>
         <span className="book-cover">
           <Cover platform={platform} entry={entry} />
@@ -104,7 +117,7 @@ export function BookCard({ platform, entry, books, onMenu }: ItemProps) {
 /** Plain cover tile, like the iPad Books library: the cover, its file format (checked when finished, NEW when unopened), and a "…" button. */
 export function ShelfTile({ platform, entry, books, onMenu }: ItemProps) {
   return (
-    <li className="book-card shelf-tile">
+    <li className="book-card shelf-tile" onContextMenu={(e) => openContextMenu(e, entry, onMenu)}>
       <button type="button" className="book-open" onClick={() => books.onOpen(entry.id)} title={entry.title}>
         <span className="tile-cover">
           <Cover platform={platform} entry={entry} />

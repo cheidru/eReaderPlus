@@ -71,6 +71,14 @@ describe('importEpub', () => {
     ]);
   });
 
+  it('finds a cover meta giving a path instead of an id, and takes no web page for a cover', async () => {
+    const files = epub2Files();
+    files['OEBPS/content.opf'] = (files['OEBPS/content.opf'] as string)
+      .replace('content="cov"', 'content="cover.png"')
+      .replace('<opf:item id="ncx"', '<opf:item id="img_cover" href="cover.xhtml" media-type="image/xhtml"/><opf:item id="ncx"');
+    expect((await importEpub(memoryBookFs(files))).cover).toBe('OEBPS/cover.png');
+  });
+
   it('reads fixed-layout and right-to-left books', async () => {
     const files = epub3Files();
     files['OEBPS/content.opf'] = (files['OEBPS/content.opf'] as string)
