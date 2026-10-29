@@ -210,6 +210,22 @@
   color: var(--text-muted);
 }
 
+/* A detail under the title, such as a file's path: wrapped anywhere, and selectable to copy. */
+.menu-note {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-width: 24rem;
+  padding: 0 1.25rem 0.6rem;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.menu-note-label {
+  color: var(--text-muted);
+}
+
 .menu-item {
   appearance: none;
   width: 100%;

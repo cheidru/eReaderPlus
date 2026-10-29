@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { applyFilter, booksAt, groupsOf, isFilterActive, isFormatShown, isReading, NO_AUTHOR, shownExtensions, sortAt, sortEntries, toggleAllFormats, toggleFormat } from '../src/core/shelves';
 import { ALL_FORMATS } from '../src/core/types';
 import type { LibraryEntry } from '../src/core/types';
+import { fileLocation } from '../src/ui/library/shelfInfo';
 
 function entry(id: string, patch: Partial<LibraryEntry> = {}): LibraryEntry {
   return { id, identifier: id, format: 'epub', title: id, authors: [], cover: null, addedAt: 0, lastOpenedAt: 0, progress: 0, ...patch };
@@ -120,5 +121,16 @@ describe('shelves', () => {
 
   it('lists nothing directly on the Folders shelf', () => {
     expect(booksAt(books, { shelf: 'folders', group: '/books' })).toEqual([]);
+  });
+});
+
+describe('fileLocation', () => {
+  it("tells where a book's file is: its path, or the storage place an Android document address names", () => {
+    expect(fileLocation(entry('a', { source: 'G:\RAR\book.epub' }))).toBe('G:\RAR\book.epub');
+    expect(fileLocation(entry('a', { source: 'content://com.android.externalstorage.documents/document/primary%3ABooks%2FDune.epub' }))).toBe(
+      'Internal storage/Books/Dune.epub',
+    );
+    expect(fileLocation(entry('a', { source: 'content://com.android.providers.downloads.documents/document/msf%3A1234' }))).toBeNull();
+    expect(fileLocation(entry('a', { source: '' }))).toBeNull();
   });
 });

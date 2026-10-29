@@ -5,7 +5,7 @@ import type { BookManifest, LibraryEntry } from '../../core/types';
 import type { Platform } from '../../platform';
 import { Icon } from '../icons';
 import { BookToggles, Cover } from '../library/BookItems';
-import { percentRead, seriesLabel, type BookHandlers } from '../library/shelfInfo';
+import { fileLocation, percentRead, seriesLabel, type BookHandlers } from '../library/shelfInfo';
 import './Pages.css';
 
 interface Props {
@@ -38,6 +38,7 @@ export function BookDetails({ platform, entry, books, formatsButton, onBack, onA
   }, [platform, entry.id]);
 
   const language = manifest?.language && manifest.language !== 'und' ? languageName(manifest.language) : null;
+  const location = fileLocation(entry);
 
   return (
     <div className="page">
@@ -106,6 +107,7 @@ export function BookDetails({ platform, entry, books, formatsButton, onBack, onA
               {formatLabel(entry.format)}
               {entry.fileName ? ` · ${entry.fileName}` : ''}
             </Item>
+            {location && <Item label="File location">{location}</Item>}
             {language && <Item label="Language">{language}</Item>}
             {manifest && (
               <Item label="Contents">

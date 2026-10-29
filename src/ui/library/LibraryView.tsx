@@ -19,12 +19,12 @@ import {
 } from '../../core/shelves';
 import { ALL_FORMATS, type BookFormat, type LibraryEntry, type LibraryPrefs, type SortKey } from '../../core/types';
 import type { FileRef, FolderListing, Platform } from '../../platform';
-import { Checkbox, FilterDialog, PopupMenu, type MenuItem } from '../Dialogs';
+import { Checkbox, FilterDialog, PopupMenu, type MenuAnchor, type MenuItem } from '../Dialogs';
 import { FormatsButton } from '../FormatsButton';
 import { Icon, type IconName } from '../icons';
 import { FolderAccessPrompt } from '../pages/FolderPicker';
 import { BookCard, ImportingItem, ShelfTile, type ImportingBook } from './BookItems';
-import { DRAWER_SHELVES, locationTitle, percentRead, SHELVES, SORT_LABELS, type BookHandlers } from './shelfInfo';
+import { DRAWER_SHELVES, fileLocation, locationTitle, percentRead, SHELVES, SORT_LABELS, type BookHandlers } from './shelfInfo';
 import { SHELF_TABS, ShelfTabs } from './ShelfTabs';
 import './LibraryView.css';
 
@@ -51,7 +51,7 @@ interface Props {
   onAbout: () => void;
 }
 
-type Menu = { kind: 'main' | 'sort'; anchor: HTMLElement } | { kind: 'book'; anchor: HTMLElement; entry: LibraryEntry };
+type Menu = { kind: 'main' | 'sort'; anchor: MenuAnchor } | { kind: 'book'; anchor: MenuAnchor; entry: LibraryEntry };
 
 export function LibraryView(props: Props) {
   const { platform, entries, collections, prefs, location, onLocationChange, onPrefsChange, books } = props;
@@ -272,6 +272,7 @@ export function LibraryView(props: Props) {
           anchor={menu.anchor}
           title={menu.kind === 'book' ? menu.entry.title : menu.kind === 'sort' ? 'Sort by' : undefined}
           items={menu.kind === 'book' ? bookItems(menu.entry) : menu.kind === 'sort' ? sortItems : mainItems}
+          note={menu.kind === 'book' ? locationNote(menu.entry) : undefined}
           onClose={() => setMenu(null)}
         />
       )}
@@ -285,6 +286,12 @@ export function LibraryView(props: Props) {
       )}
     </div>
   );
+}
+
+/** Where a book's file is, under the title of its menu. */
+function locationNote(entry: LibraryEntry): { label: string; text: string } | undefined {
+  const location = fileLocation(entry);
+  return location ? { label: 'File location', text: location } : undefined;
 }
 
 function Drawer({ location, onSelect, onSettings, onAbout, onClose }: { location: LibraryLocation; onSelect: (shelf: Shelf) => void; onSettings: () => void; onAbout: () => void; onClose: () => void }) {

@@ -40,6 +40,26 @@ export function seriesLabel(series: Series): string {
   return series.index === undefined ? series.name : `${series.name} #${series.index}`;
 }
 
+/**
+ * Where the book's file is: its path, or on Android the place in the device's storage that a picked file's address
+ * names. Null when it isn't known (books imported before it was kept, or an address that names no place).
+ */
+export function fileLocation(entry: LibraryEntry): string | null {
+  const source = entry.source;
+  if (!source) return null;
+  if (!source.startsWith('content://')) return source;
+  // A document address ends in the document's id, such as "primary:Books/Dune.epub" (encoded).
+  let id: string;
+  try {
+    id = decodeURIComponent(source.slice(source.lastIndexOf('/') + 1));
+  } catch {
+    return null;
+  }
+  const [, volume, path] = /^([^:/]+):(.+\/.+)$/.exec(id) ?? [];
+  if (!path) return null;
+  return volume === 'primary' ? `Internal storage/${path}` : `${volume}/${path}`;
+}
+
 export function percentRead(entry: LibraryEntry): number {
   return Math.round(entry.progress * 100);
 }

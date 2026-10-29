@@ -272,17 +272,22 @@ export interface MenuItem {
   danger?: boolean;
 }
 
+/** The button that opened a menu, or the point right-clicked. */
+export type MenuAnchor = HTMLElement | { x: number; y: number };
+
 interface PopupMenuProps {
-  /** The button that opened the menu; the menu opens over its corner, like an Android overflow menu. */
-  anchor: HTMLElement;
+  /** The button that opened the menu, which opens over its corner like an Android overflow menu; or a point, where it opens like a context menu. */
+  anchor: MenuAnchor;
   title?: string;
   items: MenuItem[];
+  /** A detail shown under the title, such as where the book's file is. */
+  note?: { label: string; text: string };
   /** Opens under the button, as a drop-down list, rather than over it. */
   dropdown?: boolean;
   onClose: () => void;
 }
 
-export function PopupMenu({ anchor, title, items, dropdown, onClose }: PopupMenuProps) {
+export function PopupMenu({ anchor, title, items, note, dropdown, onClose }: PopupMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   useEscape(onClose);
@@ -290,13 +295,16 @@ export function PopupMenu({ anchor, title, items, dropdown, onClose }: PopupMenu
   useLayoutEffect(() => {
     const menu = ref.current;
     if (!menu) return;
-    const a = anchor.getBoundingClientRect();
     const m = menu.getBoundingClientRect();
     const margin = 8;
-    const left = Math.max(margin, Math.min(a.right - m.width, window.innerWidth - m.width - margin));
-    const top = Math.max(margin, Math.min(dropdown ? a.bottom + 4 : a.top, window.innerHeight - m.height - margin));
-    setPosition({ top, left });
-  }, [anchor, items, title, dropdown]);
+    const fit = (at: number, size: number, room: number) => Math.max(margin, Math.min(at, room - size - margin));
+    if (!(anchor instanceof HTMLElement)) {
+      setPosition({ top: fit(anchor.y, m.height, window.innerHeight), left: fit(anchor.x, m.width, window.innerWidth) });
+      return;
+    }
+    const a = anchor.getBoundingClientRect();
+    setPosition({ top: fit(dropdown ? a.bottom + 4 : a.top, m.height, window.innerHeight), left: fit(a.right - m.width, m.width, window.innerWidth) });
+  }, [anchor, items, title, note, dropdown]);
 
   // Focus goes to the first item when the menu opens or moves to a submenu, not when a ticked item updates it.
   useEffect(() => {
@@ -323,6 +331,12 @@ export function PopupMenu({ anchor, title, items, dropdown, onClose }: PopupMenu
         onKeyDown={onKeyDown}
       >
         {title && <div className="menu-title">{title}</div>}
+        {note && (
+          <div className="menu-note">
+            <span className="menu-note-label">{note.label}</span>
+            <span className="menu-note-text">{note.text}</span>
+          </div>
+        )}
         {items.map((item) => (
           <button
             key={item.label}
