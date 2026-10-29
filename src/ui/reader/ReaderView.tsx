@@ -18,6 +18,7 @@ import { bookUrl, type Platform } from '../../platform';
 import { GalaxySpinner } from '../GalaxySpinner';
 import { Icon } from '../icons';
 import { ShelfTabs } from '../library/ShelfTabs';
+import { ImageViewer } from './ImageViewer';
 import { MIN_QUERY_LENGTH, NO_SEARCH, SearchPanel, type SearchState } from './SearchPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { TocPanel } from './TocPanel';
@@ -85,6 +86,8 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
   const [chromeVisible, setChromeVisible] = useState(true);
   const [panel, setPanel] = useState<Panel>(null);
   const [search, setSearch] = useState<SearchState>(NO_SEARCH);
+  /** The picture double-clicked in the book, shown over it to zoom and pan. */
+  const [picture, setPicture] = useState<string | null>(null);
   /** Whether the book frame is landscape and wide enough for two pages (the paginator decides the same for text). */
   const [frameFitsSpread, setFrameFitsSpread] = useState(false);
   /** Stops reading the book's text for search when the book is closed. */
@@ -493,7 +496,16 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
           visualTurn(message.dir);
           break;
         case 'key':
-          handleKey(message.key);
+          // Keys reach the book only while the picture viewer opens (it takes the focus).
+          if (picture) {
+            if (message.key === 'Escape') setPicture(null);
+          } else {
+            handleKey(message.key);
+          }
+          break;
+        case 'image':
+          // Only the book's own pictures, or ones inlined in it.
+          if (current && (message.src.startsWith(`${origin}/`) || message.src.startsWith('data:image/'))) setPicture(message.src);
           break;
         case 'wheel': {
           const now = Date.now();
@@ -536,7 +548,7 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [origin, manifest, settings, changeSettings, frameSettings, postTo, showSlot, holdSpin, platform, lastShown, navigate, navigateHref, panel, visualTurn, turn, handleKey, flushSave, answerDjvuPage, answerPdfPage]);
+  }, [origin, manifest, settings, changeSettings, frameSettings, postTo, showSlot, holdSpin, platform, lastShown, navigate, navigateHref, panel, picture, visualTurn, turn, handleKey, flushSave, answerDjvuPage, answerPdfPage]);
 
   // Push settings changes to every loaded document.
   useEffect(() => {
@@ -549,7 +561,8 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
   // Keyboard when focus is in the app rather than inside the book frame.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+      // The picture viewer has keys of its own.
+      if (picture || event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
       // Space never turns pages: on a zoomed fixed page it holds the hand tool (paginator.ts).
       if (event.key === ' ') {
         event.preventDefault();
@@ -576,7 +589,7 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [handleKey, manifest, post]);
+  }, [handleKey, manifest, post, picture]);
 
   useEffect(() => {
     // Created here, not at first render: React's StrictMode unmounts and remounts once in development.
@@ -808,6 +821,7 @@ export function ReaderView({ platform, bookId, settings: appSettings, onSettings
           onClose={() => setPanel(null)}
         />
       )}
+      {picture && <ImageViewer src={picture} onClose={() => setPicture(null)} />}
     </div>
   );
 }

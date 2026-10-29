@@ -1,0 +1,44 @@
+/* A picture of the book over the whole window, zoomed and panned (ImageViewer.tsx). Above the reader's bars and panels,
+   below dialogs and snackbars. */
+.image-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  overflow: hidden;
+  background: rgb(10 10 14 / 0.94);
+  color: #fff;
+  cursor: zoom-out;
+  /* The viewer pans and pinch-zooms the picture itself. */
+  touch-action: none;
+  user-select: none;
+  outline: none;
+}
+
+.image-viewer-picture {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--picture-width);
+  height: var(--picture-height);
+  max-width: none;
+  transform: translate(var(--picture-x), var(--picture-y));
+  cursor: grab;
+  -webkit-user-drag: none;
+}
+
+.image-viewer-picture:active {
+  cursor: grabbing;
+}
+
+/* Until its size is known, the picture can't be placed. */
+.image-viewer-picture-loading {
+  visibility: hidden;
+}
+
+.image-viewer-close {
+  position: absolute;
+  top: calc(0.5rem + var(--safe-top));
+  right: calc(0.5rem + var(--safe-right));
+  background: rgb(0 0 0 / 0.45);
+  color: #fff;
+}

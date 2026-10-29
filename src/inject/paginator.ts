@@ -744,6 +744,33 @@ import { findRange } from '../core/textsearch';
     pinch = null;
   });
 
+  // --- Pictures: a double click (double tap) on one in reflowable text opens it in the app, to zoom and pan ------
+
+  /** A tap on a picture waits this long for a second one, which makes it a double click instead. */
+  const DOUBLE_CLICK_MS = 300;
+  let pendingTap: number | undefined;
+
+  /** The address of the picture at `target`, if it can be opened: an <img>, or an SVG <image> (covers often are). */
+  function pictureAt(target: Element | null): string | null {
+    if (mode() === 'fixed' || !target) return null;
+    let src: string | null = null;
+    const img = target.closest('img');
+    if (img) src = img.currentSrc || img.src;
+    else if (target instanceof SVGImageElement && target.href.baseVal) src = new URL(target.href.baseVal, document.baseURI).href;
+    // The app can show pictures of the book's own origin, and data: ones; not this document's blob: ones.
+    return src && (src.startsWith(`${location.origin}/`) || src.startsWith('data:image/')) ? src : null;
+  }
+
+  window.addEventListener('dblclick', (event) => {
+    if (event.defaultPrevented || hand) return;
+    const src = pictureAt(event.target instanceof Element ? event.target : null);
+    if (!src) return;
+    event.preventDefault();
+    window.clearTimeout(pendingTap);
+    document.getSelection()?.removeAllRanges();
+    post({ type: 'image', src });
+  });
+
   window.addEventListener('click', (event) => {
     const start = pointerStart;
     pointerStart = null;
@@ -756,7 +783,11 @@ import { findRange } from '../core/textsearch';
     if (target?.closest(INTERACTIVE)) return;
     if (!document.getSelection()?.isCollapsed) return;
     if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) return;
-    post({ type: 'tap', x: event.clientX / window.innerWidth, y: event.clientY / window.innerHeight });
+    const tap = () => post({ type: 'tap', x: event.clientX / window.innerWidth, y: event.clientY / window.innerHeight });
+    window.clearTimeout(pendingTap);
+    if (!pictureAt(target)) return tap();
+    // The first click of a double click on a picture must not turn the page or show the bars; the second one isn't a tap.
+    if (event.detail < 2) pendingTap = window.setTimeout(tap, DOUBLE_CLICK_MS);
   });
 
   function handleLink(event: MouseEvent, link: HTMLAnchorElement | SVGAElement) {

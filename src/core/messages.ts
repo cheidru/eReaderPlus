@@ -118,12 +118,17 @@ export type FrameMessage =
   | { type: 'textzoom'; dir: 1 | -1 }
   | { type: 'link'; href: string }
   | { type: 'external'; href: string }
+  /** Reflowable: a double click on a picture asks the app to show it, to zoom and pan (an address of the book, or a data: URL). */
+  | { type: 'image'; src: string }
   /** DjVu: asks the app for a page (1-based), which it keeps decoded in memory while the book is open; `full`: at full resolution. */
   | { type: 'djvuPage'; page: number; full: boolean }
   /** PDF: asks the app for a page (1-based) drawn at `scale` device px per PDF point; the app keeps the book open and draws pages ahead. */
   | { type: 'pdfPage'; page: number; scale: number };
 
 const KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', 'Escape']);
+
+/** A picture inlined in the book as a data: URL can be large. */
+const MAX_IMAGE_SRC_LENGTH = 32 * 1024 * 1024;
 
 function isNum(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
@@ -176,6 +181,8 @@ export function parseFrameMessage(data: unknown): FrameMessage | null {
       return isShortString(m.href) ? { type: 'link', href: m.href } : null;
     case 'external':
       return isShortString(m.href) && /^(https?:|mailto:)/i.test(m.href) ? { type: 'external', href: m.href } : null;
+    case 'image':
+      return isShortString(m.src, MAX_IMAGE_SRC_LENGTH) ? { type: 'image', src: m.src } : null;
     case 'djvuPage':
       return Number.isInteger(m.page) && (m.page as number) >= 1 ? { type: 'djvuPage', page: m.page as number, full: m.full === true } : null;
     case 'pdfPage':

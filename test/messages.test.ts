@@ -19,6 +19,10 @@ describe('parseFrameMessage', () => {
     expect(parseFrameMessage({ tag: 'ereader', type: 'djvuPage', page: 3 })).toEqual({ type: 'djvuPage', page: 3, full: false });
     expect(parseFrameMessage({ tag: 'ereader', type: 'djvuPage', page: 3, full: true })).toEqual({ type: 'djvuPage', page: 3, full: true });
     expect(parseFrameMessage({ tag: 'ereader', type: 'pdfPage', page: 2, scale: 2.5 })).toEqual({ type: 'pdfPage', page: 2, scale: 2.5 });
+    expect(parseFrameMessage({ tag: 'ereader', type: 'image', src: 'book://abc/OEBPS/images/fig1.jpg' })).toEqual({
+      type: 'image',
+      src: 'book://abc/OEBPS/images/fig1.jpg',
+    });
     expect(parseFrameMessage({ tag: 'ereader', type: 'passWheel', deltaX: 0, deltaY: 100, ctrlKey: 1, x: 5, y: 6, extra: 1 })).toEqual({
       type: 'passWheel',
       deltaX: 0,
@@ -37,6 +41,7 @@ describe('parseFrameMessage', () => {
     expect(parseFrameMessage({ tag: 'ereader', type: 'external', href: 'javascript:alert(1)' })).toBeNull();
     expect(parseFrameMessage({ tag: 'ereader', type: 'edge', dir: 5 })).toBeNull();
     expect(parseFrameMessage({ tag: 'ereader', type: 'key', key: 'F12' })).toBeNull();
+    expect(parseFrameMessage({ tag: 'ereader', type: 'image', src: { toString: () => 'x' } })).toBeNull();
     expect(parseFrameMessage({ tag: 'ereader', type: 'zoom', zoom: Number.NaN, panX: 0 })).toBeNull();
     expect(parseFrameMessage({ tag: 'ereader', type: 'textzoom', dir: 10 })).toBeNull();
     expect(parseFrameMessage({ tag: 'ereader', type: 'djvuPage', page: 0 })).toBeNull();
