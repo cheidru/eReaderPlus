@@ -67,6 +67,52 @@ import { findRange } from '../core/textsearch';
     }
   }
 
+  /** Pictures and other content drawn as a box, which a page break can't go through. */
+  const REPLACED = new Set(['img', 'svg', 'video', 'canvas', 'iframe', 'object', 'embed', 'math']);
+
+  /** The first content of the document that is drawn (text or a picture), and its box. */
+  function firstContent(): { node: Node; rect: DOMRect } | null {
+    if (!document.body) return null;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => {
+        if (node instanceof Text) return /\S/.test(node.data) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+        return node instanceof Element && REPLACED.has(node.localName) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+      },
+    });
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      let rect: DOMRect | undefined;
+      if (node instanceof Text) {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        rect = range.getClientRects()[0];
+      } else {
+        rect = (node as Element).getBoundingClientRect();
+      }
+      if (rect && rect.width > 0 && rect.height > 0) return { node, rect };
+    }
+    return null;
+  }
+
+  /**
+   * A picture as tall as the page at the start of a document doesn't fit on the first page under the top margins of
+   * the paragraphs it is in, and goes on to the next page (column), leaving the first one blank. At the top of any
+   * other page those margins are dropped (a page break truncates them): the first page drops them too, once it would
+   * be blank.
+   */
+  function trimBlankStart() {
+    if (mode() !== 'paginated' || pageCount < 2) return;
+    const first = firstContent();
+    if (!first) return;
+    const { node, rect } = first;
+    const column = window.innerWidth / (root.classList.contains('ereader-spread') ? 2 : 1);
+    const blank = rtlSign() === 1 ? rect.left + window.scrollX >= column : rect.right + window.scrollX <= window.innerWidth - column;
+    if (!blank) return;
+    for (let el = node instanceof Element ? node : node.parentElement; el && el !== document.body; el = el.parentElement) {
+      el.setAttribute('data-ereader-trim', '');
+    }
+    measure();
+  }
+
   // --- Fixed layout: the page is fitted to the screen, then optionally zoomed and panned ----------
 
   /**
@@ -381,6 +427,7 @@ import { findRange } from '../core/textsearch';
     const keep: GotoTarget = anchor ?? { kind: 'fraction', value: currentFraction() };
     updateSpread();
     measure();
+    trimBlankStart();
     goto(keep);
   }
 

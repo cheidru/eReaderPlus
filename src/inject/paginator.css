@@ -44,12 +44,19 @@ html.ereader-paginated body {
   min-height: 0 !important;
 }
 
+/* A picture as tall as the page sits on a line, whose strut sticks out below it. Less than a line shorter, the line fits
+   the page: a taller line can't, and Chromium then shows the picture again at the top of the next page. */
 html.ereader-paginated :is(img, svg, video, canvas, iframe, object, embed) {
   max-width: 100% !important;
-  max-height: calc(100vh - 2 * var(--ereader-margin-block)) !important;
+  max-height: calc(100vh - 2 * var(--ereader-margin-block) - 1lh) !important;
   box-sizing: border-box;
   object-fit: contain;
   break-inside: avoid;
+}
+
+/* The top margins above the first content of a document, which would leave the first page blank (paginator.ts). */
+html.ereader-paginated [data-ereader-trim] {
+  margin-block-start: 0 !important;
 }
 
 html.ereader-paginated :is(table, pre, figure) {
