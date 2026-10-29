@@ -16,6 +16,9 @@ const KEY_ZOOM = 1.25;
 /** A pointer that moves farther than this between press and release drags rather than clicks. */
 const DRAG_THRESHOLD = 4;
 
+/** Whether an event is on a button: on its icon, too. */
+const onButton = (event: { target: EventTarget }) => event.target instanceof Element && event.target.closest('button') !== null;
+
 /**
  * A picture of the book over the whole window, to look at closely: the wheel, a pinch, the + and - keys or a double
  * click zoom it, dragging pans it, and Esc, the close button or a click beside it closes it.
@@ -97,7 +100,8 @@ export function ImageViewer({ src, onClose }: Props) {
   };
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.target instanceof HTMLButtonElement || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    // Capturing a press on the close button would take its click away from it.
+    if (onButton(event) || (event.pointerType === 'mouse' && event.button !== 0)) return;
     const at = local(event);
     if (pointers.current.size === 0) press.current = { beside: event.target === event.currentTarget, dragged: false, ...at };
     else press.current.dragged = true;
@@ -130,7 +134,7 @@ export function ImageViewer({ src, onClose }: Props) {
   };
 
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
-    if (event.target instanceof HTMLButtonElement) return;
+    if (onButton(event)) return;
     if (press.current.beside && !press.current.dragged) onCloseRef.current();
   };
 
