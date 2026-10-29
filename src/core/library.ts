@@ -91,7 +91,7 @@ export async function addBook(
     const found = entries.find((e) => e.format === manifest.format && e.identifier === manifest.identifier);
     if (!found) return [[entry, ...entries], null];
     // The book is the one in this file: opening the file again opens it without importing it (bookFromFile).
-    const updated = { ...found, source: file.ref, sourceStat: stat ?? undefined };
+    const updated = { ...found, source: file.ref, sourceStat: stat ?? undefined, fileName: file.name };
     return [entries.map((e) => (e === found ? updated : e)), updated];
   });
   if (existing) {

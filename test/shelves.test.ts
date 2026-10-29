@@ -61,6 +61,10 @@ describe('shelves', () => {
     const none = { formats: [], hideFinished: false };
     expect(ids(applyFilter(books, none, 'herbert'))).toEqual(['Dune', 'Children of Dune']);
     expect(ids(applyFilter(books, none, 'SCAN'))).toEqual(['anonymous']);
+    // A book file renamed since it was imported is found by its new name, too; not by its folder.
+    const renamed = [entry('Emma', { fileName: 'emma.fb2', source: 'C:\\Books\\Austen - Emma (1815).fb2' })];
+    expect(ids(applyFilter(renamed, none, 'austen - emma'))).toEqual(['Emma']);
+    expect(ids(applyFilter(renamed, none, 'books'))).toEqual([]);
   });
 
   it('sorts text A to Z (case-insensitively) and dates newest first', () => {

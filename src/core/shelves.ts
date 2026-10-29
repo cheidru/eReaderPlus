@@ -106,13 +106,15 @@ export function groupsOf(entries: LibraryEntry[], shelf: GroupShelf, collectionN
     .sort((a, b) => compareText(a.label, b.label));
 }
 
+/** Search finds a book by its title, authors, series, and the name of its file: as imported, and as last opened. */
 export function applyFilter(entries: LibraryEntry[], filter: LibraryFilter, search = ''): LibraryEntry[] {
   const query = search.trim().toLocaleLowerCase();
   return entries.filter(
     (e) =>
       isFormatShown(filter, e.format) &&
       !(filter.hideFinished && e.finished) &&
-      (!query || [e.title, ...e.authors, e.series?.name ?? '', e.fileName ?? ''].some((text) => text.toLocaleLowerCase().includes(query))),
+      (!query ||
+        [e.title, ...e.authors, e.series?.name ?? '', e.fileName ?? '', e.source?.split(/[\\/]/).pop() ?? ''].some((text) => text.toLocaleLowerCase().includes(query))),
   );
 }
 
