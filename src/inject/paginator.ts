@@ -113,6 +113,75 @@ import { findRange } from '../core/textsearch';
     measure();
   }
 
+  /** Pictures that can be drawn shorter (object-fit keeps their proportions). */
+  const PICTURES = 'img, svg, video, canvas';
+  /** A picture is made at most this much shorter to keep a page together. */
+  const FIT_MAX_SHRINK = 0.4;
+  /** And only for at most this much of a page going on to the next one. */
+  const FIT_MAX_SPILL = 1 / 3;
+
+  /** Which column of the document a box is in (0: the first page). */
+  function columnOf(rect: DOMRect): number {
+    const stride = window.innerWidth / (root.classList.contains('ereader-spread') ? 2 : 1);
+    const x = rtlSign() === 1 ? rect.left + window.scrollX : window.innerWidth - (rect.right + window.scrollX);
+    return Math.floor((x + 1) / stride);
+  }
+
+  /** How far the content of a two-page document goes down its second page, in px (0 if it fits on one page). */
+  function secondPageSpill(): number {
+    const range = document.createRange();
+    range.selectNodeContents(document.body);
+    const top = parseFloat(getComputedStyle(root).paddingTop) || 0;
+    let bottom = 0;
+    for (const rect of Array.from(range.getClientRects())) {
+      if (rect.width > 0 && rect.height > 0 && columnOf(rect) === 1) bottom = Math.max(bottom, rect.bottom - top);
+    }
+    return bottom;
+  }
+
+  function unfitPictures() {
+    for (const el of Array.from(document.querySelectorAll<HTMLElement | SVGElement>('[data-ereader-fit]'))) {
+      el.removeAttribute('data-ereader-fit');
+      el.style.removeProperty('--ereader-fit-height');
+    }
+  }
+
+  /**
+   * A page with a picture, a little too tall for the page (a picture as tall as the page with its caption below, say),
+   * leaves its last lines alone on the next page. A document that is just that page has its tallest picture drawn that
+   * much shorter instead, so it fits on one page.
+   */
+  function fitPicturePage() {
+    unfitPictures();
+    if (mode() !== 'paginated' || !document.body) return;
+    const stride = window.innerWidth / (root.classList.contains('ereader-spread') ? 2 : 1);
+    // Only a document of two pages (columns).
+    if (scroller().scrollWidth > 2 * stride + 1) return;
+    let spill = secondPageSpill();
+    if (spill === 0 || spill > window.innerHeight * FIT_MAX_SPILL) return;
+    let picture: HTMLElement | SVGElement | null = null;
+    let height = 0;
+    for (const el of Array.from(document.querySelectorAll<HTMLElement | SVGElement>(PICTURES))) {
+      const rect = el.getBoundingClientRect();
+      if (rect.height > height && columnOf(rect) === 0 && !el.parentElement?.closest(PICTURES)) {
+        picture = el;
+        height = rect.height;
+      }
+    }
+    if (!picture) return;
+    picture.setAttribute('data-ereader-fit', '');
+    // Lines moved up onto the first page take their margins along, which a page break had dropped: tries again for those.
+    let fit = height;
+    for (let attempt = 0; attempt < 3 && spill > 0; attempt++) {
+      fit -= spill + 1;
+      if (fit < height * (1 - FIT_MAX_SHRINK)) break;
+      picture.style.setProperty('--ereader-fit-height', `${fit}px`);
+      spill = secondPageSpill();
+    }
+    if (spill > 0) unfitPictures();
+    measure();
+  }
+
   // --- Fixed layout: the page is fitted to the screen, then optionally zoomed and panned ----------
 
   /**
@@ -426,8 +495,10 @@ import { findRange } from '../core/textsearch';
     }
     const keep: GotoTarget = anchor ?? { kind: 'fraction', value: currentFraction() };
     updateSpread();
+    unfitPictures();
     measure();
     trimBlankStart();
+    fitPicturePage();
     goto(keep);
   }
 

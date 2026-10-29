@@ -54,6 +54,11 @@ html.ereader-paginated :is(img, svg, video, canvas, iframe, object, embed) {
   break-inside: avoid;
 }
 
+/* A picture drawn shorter to keep its page together, such as with its caption (paginator.ts). */
+html.ereader-paginated [data-ereader-fit] {
+  max-height: var(--ereader-fit-height) !important;
+}
+
 /* The top margins above the first content of a document, which would leave the first page blank (paginator.ts). */
 html.ereader-paginated [data-ereader-trim] {
   margin-block-start: 0 !important;
