@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { memoryBookFs } from '../src/core/bookfs';
-import { importEpub } from '../src/core/epub';
+import { forEachAtOnce, importEpub } from '../src/core/epub';
 import { INJECTED_TAGS } from '../src/core/inject';
 import { epub2Files, epub3Files } from './fixtures';
 
@@ -79,5 +79,32 @@ describe('importEpub', () => {
     const book = await importEpub(memoryBookFs(files));
     expect(book.layout).toBe('pre-paginated');
     expect(book.direction).toBe('rtl');
+  });
+});
+
+describe('forEachAtOnce', () => {
+  it('runs every task, no more than the limit at a time', async () => {
+    let running = 0;
+    let most = 0;
+    const done: number[] = [];
+    await forEachAtOnce([1, 2, 3, 4, 5, 6, 7], 3, async (n) => {
+      most = Math.max(most, ++running);
+      await new Promise((resolve) => setTimeout(resolve, 8 - n));
+      done.push(n);
+      running--;
+    });
+    expect(done.sort()).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(most).toBe(3);
+  });
+
+  it('starts no more tasks after one fails, and rejects with its error', async () => {
+    const started: number[] = [];
+    const run = forEachAtOnce([1, 2, 3, 4, 5, 6], 2, async (n) => {
+      started.push(n);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      if (n === 2) throw new Error('broken');
+    });
+    await expect(run).rejects.toThrow('broken');
+    expect(started.length).toBeLessThan(6);
   });
 });

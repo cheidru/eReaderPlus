@@ -39,8 +39,10 @@ export async function importEpub(fs: BookFs, onPreview?: OnPreview): Promise<Par
   await deobfuscateFonts(fs, book.uniqueIdentifier, identifiers);
 
   const aliases: Record<string, string> = {};
-  for (const [index, item] of book.spineItems.entries()) {
-    if (!isHtmlMediaType(item.mediaType) || !fs.files.includes(item.href)) continue;
+  const files = new Set(fs.files);
+  // A few documents at a time: a book of a thousand small documents goes several times faster than one by one.
+  await forEachAtOnce([...book.spineItems.entries()], SPINE_CONCURRENCY, async ([index, item]) => {
+    if (!isHtmlMediaType(item.mediaType) || !files.has(item.href)) return;
     let source = await fs.readText(item.href);
     let target = item.href;
     if (item.mediaType === 'application/xhtml+xml' && /<script[\s>]/i.test(source)) {
@@ -54,11 +56,34 @@ export async function importEpub(fs: BookFs, onPreview?: OnPreview): Promise<Par
       }
     }
     await fs.writeText(target, injectReader(source));
-  }
+  });
 
   book.parsed.toc = applyAliases(await readToc(fs, book), aliases);
   book.parsed.aliases = aliases;
   return book.parsed;
+}
+
+/** Spine documents read and written at once while importing. */
+const SPINE_CONCURRENCY = 8;
+
+/**
+ * Runs `task` on every item, `limit` at a time. After a failure no more tasks start, and once the ones running have
+ * ended, it rejects with that failure.
+ */
+export async function forEachAtOnce<T>(items: T[], limit: number, task: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const failures: unknown[] = [];
+  const worker = async () => {
+    while (failures.length === 0 && next < items.length) {
+      try {
+        await task(items[next++]);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  if (failures.length > 0) throw failures[0];
 }
 
 function applyAliases(items: TocItem[], aliases: Record<string, string>): TocItem[] {

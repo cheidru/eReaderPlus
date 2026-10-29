@@ -29,33 +29,62 @@ export function resolveInBook(bookId: string, relative: string): string {
   return resolved;
 }
 
+/** Files written at once while extracting: a book of thousands of small files extracts several times faster than one by one. */
+const EXTRACT_CONCURRENCY = 4;
+
 export async function extractArchive(archivePath: string, bookId: string): Promise<string[]> {
-  const zip = await yauzl.openPromise(archivePath, { lazyEntries: true, autoClose: true });
+  const zip = await yauzl.openPromise(archivePath, { lazyEntries: true, autoClose: false });
   const extracted: string[] = [];
+  let entries = 0;
   let totalBytes = 0;
-  await new Promise<void>((resolve, reject) => {
-    zip.on('error', reject);
-    zip.on('end', resolve);
-    zip.on('entry', (entry: yauzl.Entry) => {
-      void (async () => {
-        if (extracted.length >= MAX_ENTRIES) throw new Error('Archive has too many files');
+  /** Each folder is made once, also when files in it are written at the same time. */
+  const folders = new Map<string, Promise<unknown>>();
+  const makeFolder = (dir: string) => {
+    let made = folders.get(dir);
+    if (!made) folders.set(dir, (made = mkdir(dir, { recursive: true })));
+    return made;
+  };
+  const writing = new Set<Promise<void>>();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      let failed = false;
+      const fail = (error: unknown) => {
+        failed = true;
+        reject(error);
+      };
+      zip.on('error', fail);
+      zip.on('end', () => void Promise.all(writing).then(() => resolve(), fail));
+      zip.on('entry', (entry: yauzl.Entry) => {
+        if (failed) return;
+        if (++entries > MAX_ENTRIES) return fail(new Error('Archive has too many files'));
         totalBytes += entry.uncompressedSize;
-        if (totalBytes > MAX_TOTAL_BYTES) throw new Error('Archive is too large');
+        if (totalBytes > MAX_TOTAL_BYTES) return fail(new Error('Archive is too large'));
         const name = entry.fileName.replace(/\\/g, '/');
-        if (!name.endsWith('/')) {
+        if (name.endsWith('/')) return zip.readEntry();
+        const write = (async () => {
           const target = resolveInBook(bookId, name);
-          await mkdir(path.dirname(target), { recursive: true });
+          await makeFolder(path.dirname(target));
           await pipeline(await zip.openReadStreamPromise(entry), createWriteStream(target));
           extracted.push(name);
-        }
-        zip.readEntry();
-      })().catch((error: unknown) => {
-        zip.close();
-        reject(error);
+        })();
+        writing.add(write);
+        write.then(
+          () => {
+            writing.delete(write);
+            // The next entry is read once a file is written, if all the others were still being written.
+            if (!failed && writing.size === EXTRACT_CONCURRENCY - 1) zip.readEntry();
+          },
+          fail,
+        );
+        if (writing.size < EXTRACT_CONCURRENCY) zip.readEntry();
       });
+      zip.readEntry();
     });
-    zip.readEntry();
-  });
+  } finally {
+    // Files still being written when another failed finish (or fail) before the archive closes under them.
+    await Promise.allSettled(writing);
+    zip.close();
+  }
   return extracted;
 }
 

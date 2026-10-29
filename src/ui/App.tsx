@@ -314,9 +314,16 @@ export function App() {
     void saveCollections(platform, names);
   };
 
+  /** Adds a book file to the library: a file imported before, unchanged since, isn't imported again. */
+  const addFile = async (file: FileRef) => {
+    const imported = await bookFromFile(platform, file, { unchecked: false }).catch(() => null);
+    if (imported) showNotice(`"${imported.title}" is already in the library`);
+    else await openFile(file, { open: false });
+  };
+
   const pickFile = async () => {
     const file = await platform.pickBookFile();
-    if (file) await openFile(file, { open: false });
+    if (file) await addFile(file);
   };
 
   const onDrop = (event: DragEvent) => {
@@ -324,7 +331,7 @@ export function App() {
     setDragging(false);
     const dropped = event.dataTransfer.files[0];
     const file = dropped && platform.fileFromDrop(dropped);
-    if (file) void openFile(file, { open: false });
+    if (file) void addFile(file);
   };
 
   const books: BookHandlers = {

@@ -106,13 +106,19 @@ export async function addBook(
  * where the platform can tell. Where it can't (Android), `unchecked` says whether the book counts anyway.
  */
 export async function bookFromFile(platform: Platform, file: FileRef, { unchecked }: { unchecked: boolean }): Promise<LibraryEntry | null> {
-  // A file changed since may have been imported again as another book: the newest comes first.
-  const imported = (await loadLibrary(platform)).filter((e) => e.source === file.ref);
-  if (imported.length === 0) return null;
-  if (!platform.fileStat) return unchecked ? imported[0] : null;
+  const library = await loadLibrary(platform);
+  if (!platform.fileStat) return (unchecked && library.find((e) => e.source === file.ref)) || null;
   const stat = await platform.fileStat(file);
-  return (stat && imported.find((e) => e.sourceStat?.size === stat.size && e.sourceStat.modified === stat.modified)) || null;
+  if (!stat) return null;
+  // A file changed since may have been imported again as another book: the newest comes first. A file of the same name,
+  // size and time is the same file, also opened by another path (another spelling of it, or the file copied or moved).
+  const unchanged = library.filter(
+    (e) => (e.source === file.ref || baseName(e.source) === file.name) && e.sourceStat?.size === stat.size && e.sourceStat.modified === stat.modified,
+  );
+  return unchanged.find((e) => e.source === file.ref) ?? unchanged[0] ?? null;
 }
+
+const baseName = (path: string | undefined) => path?.split(/[\\/]/).pop();
 
 /**
  * Books imported before series were read have none recorded. Once, reads their series from the files kept

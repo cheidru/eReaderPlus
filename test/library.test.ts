@@ -60,6 +60,22 @@ describe('opening a file already in the library', () => {
     expect((await bookFromFile(platform, copy, { unchecked: false }))?.id).toBe(entry.id);
   });
 
+  it('opens the book of the same file reached by another path, while it is unchanged', async () => {
+    const stats = new Map([[file.ref, { size: 10, modified: 1 }]]);
+    const platform = fakePlatform(stats);
+    const { entry } = await addBook(platform, file);
+    const spelled = { ref: 'G:/notes.md', name: 'notes.md' };
+    const moved = { ref: 'E:\\books\\notes.md', name: 'notes.md' };
+    stats.set(spelled.ref, { size: 10, modified: 1 });
+    stats.set(moved.ref, { size: 10, modified: 1 });
+    expect((await bookFromFile(platform, spelled, { unchecked: false }))?.id).toBe(entry.id);
+    expect((await bookFromFile(platform, moved, { unchecked: false }))?.id).toBe(entry.id);
+    // Without the file's name, size and time all the same, it is another file.
+    stats.set(moved.ref, { size: 10, modified: 2 });
+    expect(await bookFromFile(platform, moved, { unchecked: false })).toBeNull();
+    expect(await bookFromFile(platform, { ref: 'E:\\books\\other.md', name: 'other.md' }, { unchecked: false })).toBeNull();
+  });
+
   it('trusts the file only when asked to where the platform cannot tell whether it changed', async () => {
     const platform = fakePlatform(null);
     const { entry } = await addBook(platform, file);
