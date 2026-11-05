@@ -6,11 +6,13 @@
 import { MAX_ZOOM, MESSAGE_TAG, type FrameMessage, type FrameSettings, type GotoTarget, type HostMessage, type WheelTurn } from '../core/messages';
 import { spreadFits } from '../core/spread';
 import { findRange } from '../core/textsearch';
+import { createTextScaler } from './text-scale';
 
 (() => {
   if (window.parent === window) return;
 
   const root = document.documentElement;
+  const scaleText = createTextScaler(document);
   root.classList.add('ereader-pending');
 
   let settings: FrameSettings | null = null;
@@ -487,13 +489,14 @@ import { findRange } from '../core/textsearch';
 
   function relayout() {
     if (!settings) return;
+    const keep: GotoTarget = anchor ?? { kind: 'fraction', value: currentFraction() };
+    scaleText(settings.overrideStyles && mode() !== 'fixed' ? settings.fontScale / 100 : 1);
     if (mode() === 'fixed') {
       // Keeps the zoom and the part of the page shown (goto would return to the top).
       fitFixedLayout();
       measure();
       return report();
     }
-    const keep: GotoTarget = anchor ?? { kind: 'fraction', value: currentFraction() };
     updateSpread();
     unfitPictures();
     measure();

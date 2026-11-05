@@ -107,9 +107,8 @@ html.ereader-hand.ereader-hand-drag * {
 
 /* --- Typography overrides (off in "publisher layout" mode) --- */
 
-html.ereader-override:not(.ereader-fixed) {
-  font-size: calc(var(--ereader-font-scale) * 100%) !important;
-}
+/* Font sizes are scaled from their published computed sizes by text-scale.ts, so absolute
+   sizes and legacy HTML respond too. Publisher layout restores the original declarations. */
 
 html.ereader-custom-font body :where(:not(code, pre, kbd, samp, code *, pre *, svg, svg *, math, math *)) {
   font-family: var(--ereader-font-family) !important;

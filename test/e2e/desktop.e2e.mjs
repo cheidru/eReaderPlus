@@ -723,6 +723,44 @@ async function frameWithText(page, text) {
   const chapter = await frameWithText(page, 'Текст первой главы');
   const scripted = await chapter.evaluate(() => window.__chmScript === true);
   check('CHM case-insensitive link works and page scripts run', () => assert.ok(scripted));
+  // Old CHMs often fix body/table sizes in px and headings with keywords or <font size>.
+  // Check actual rendered sizes, not just the reader's font-scale setting.
+  await chapter.evaluate(() => {
+    const style = document.createElement('style');
+    style.textContent = 'body, table { font-size: 11px }';
+    document.head.append(style);
+    const probe = document.createElement('section');
+    probe.id = 'text-scale-probe';
+    probe.innerHTML = '<p data-size>Body text <span data-size>inherited text</span></p>' +
+      '<h2 data-size style="font-size:large">Heading</h2>' +
+      '<table><tr><td data-size>Table text</td></tr></table>' +
+      '<p data-size style="font-size:12pt !important">Points <em data-size style="font-size:150%">Relative <b data-size style="font-size:0.8em">Nested</b></em></p>' +
+      '<p data-size style="font-size:1.25rem">Root relative</p><font data-size size="4">Legacy text</font>';
+    document.body.prepend(probe);
+  });
+  const textSizes = () => chapter.evaluate(() => [...document.querySelectorAll('#text-scale-probe [data-size]')].map((el) => parseFloat(getComputedStyle(el).fontSize)));
+  const originalSizes = await textSizes();
+  const assertSizes = (actual, factor) => actual.forEach((size, i) => assert.ok(Math.abs(size - originalSizes[i] * factor) < 0.02, `${i}: ${size} vs ${originalSizes[i]} * ${factor}`));
+  await page.mouse.move(500, 380);
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up('Control');
+  await chapter.waitForFunction(() => document.documentElement.style.getPropertyValue('--ereader-font-scale') === '1.1');
+  const enlargedSizes = await textSizes();
+  check('CHM Ctrl+wheel scales fixed, inherited, relative and legacy font sizes once', () => assertSizes(enlargedSizes, 1.1));
+  await page.getByRole('button', { name: 'Display settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Larger text' }).click();
+  const twiceEnlargedSizes = await textSizes();
+  check('CHM font-size control scales from the original sizes without compounding', () => assertSizes(twiceEnlargedSizes, 1.2));
+  await page.getByRole('switch', { name: /Publisher layout/ }).check();
+  const publisherSizes = await textSizes();
+  check('CHM publisher layout restores the published text sizes', () => assertSizes(publisherSizes, 1));
+  await page.getByRole('switch', { name: /Publisher layout/ }).uncheck();
+  await page.getByRole('button', { name: 'Smaller text' }).click();
+  await page.getByRole('button', { name: 'Smaller text' }).click();
+  const restoredSizes = await textSizes();
+  check('CHM zooming back to 100% restores the original text sizes', () => assertSizes(restoredSizes, 1));
+  await page.getByRole('button', { name: 'Close settings' }).click();
   await page.getByRole('button', { name: 'Contents' }).click();
   await page.getByRole('button', { name: 'Глава вторая & часть два' }).click();
   await frameWithText(page, 'Часть два.');
