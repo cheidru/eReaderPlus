@@ -39,7 +39,10 @@ export function createElectronPlatform(api: ElectronNativeApi): Platform {
     readText: api.readText,
     readBinary: api.readBinary,
     writeText: api.writeText,
-    writeBinary: api.writeBinary,
+    // MOBI resources are views into the whole book. Both contextBridge and IPC clone typed arrays,
+    // including their backing buffer: trim the view before crossing either boundary.
+    writeBinary: (bookId, path, data) =>
+      api.writeBinary(bookId, path, data.byteLength === data.buffer.byteLength ? data : data.slice()),
     deleteBook: api.deleteBook,
     bookOrigin: (bookId) => `${BOOK_SCHEME}://${bookId}`,
     kvGet: async <T,>(key: string) => ((await api.kvGet(key)) as T | null) ?? null,

@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { createElectronPlatform } from '../src/platform/electron';
+import type { ElectronNativeApi } from '../src/platform/electron-api';
 import { memoryBookFs } from '../src/core/bookfs';
 import { INJECTED_TAGS } from '../src/core/inject';
 import { decompressPalmDoc, huffCdic, importMobi } from '../src/core/mobi';
@@ -153,5 +155,33 @@ describe('MOBI', () => {
 
     const decompress = huffCdic(huff, [cdic]);
     expect(new TextDecoder().decode(decompress(new Uint8Array([0x41, 0x42])))).toBe('Hello Hello Hello ');
+  });
+});
+
+describe('Electron binary writes', () => {
+  it('sends only the resource bytes across the native bridge, not the entire source book', async () => {
+    const source = new Uint8Array(1024 * 1024);
+    source.set([1, 2, 3], 123);
+    const writeBinary = vi.fn(async (_id: string, _path: string, data: Uint8Array) => {
+      // Structured cloning also copies bytes outside a view unless it has its own buffer.
+      const received = structuredClone(data);
+      expect([...received]).toEqual([1, 2, 3]);
+      expect(received.byteOffset).toBe(0);
+      expect(received.buffer.byteLength).toBe(3);
+    });
+    const platform = createElectronPlatform({ writeBinary } as unknown as ElectronNativeApi);
+    await platform.writeBinary('book', 'images/figure.jpg', source.subarray(123, 126));
+    expect(writeBinary).toHaveBeenCalledOnce();
+    expect(source.byteLength).toBe(1024 * 1024);
+    expect([...source.subarray(123, 126)]).toEqual([1, 2, 3]);
+  });
+
+  it('reuses a complete buffer and propagates write failures', async () => {
+    const failure = new Error('Disk full');
+    const writeBinary = vi.fn().mockRejectedValue(failure);
+    const platform = createElectronPlatform({ writeBinary } as unknown as ElectronNativeApi);
+    const data = new Uint8Array([1, 2, 3]);
+    await expect(platform.writeBinary('book', 'images/figure.jpg', data)).rejects.toBe(failure);
+    expect(writeBinary.mock.calls[0][2]).toBe(data);
   });
 });
