@@ -1,0 +1,119 @@
+name: Update engine
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One managed engine PR at a time; a newer run never interrupts testing an earlier one.
+concurrency:
+  group: maintainer-engine-update
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      base: ${{ steps.base.outputs.sha }}
+      changed: ${{ steps.update.outputs.changed }}
+      electron: ${{ steps.update.outputs.electron }}
+      chrome: ${{ steps.update.outputs.chrome }}
+      current_electron: ${{ steps.update.outputs.current_electron }}
+      current_chrome: ${{ steps.update.outputs.current_chrome }}
+      app_version: ${{ steps.update.outputs.app_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - id: base
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Prepare latest stable engine
+        id: update
+        run: npm run update:engine -- --prepare-only
+      - if: steps.update.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-packages
+          path: |
+            package.json
+            package-lock.json
+          if-no-files-found: error
+          retention-days: 14
+      - if: steps.update.outputs.changed != 'true'
+        run: echo 'The engine is already current. No PR or release was created.' >> "$GITHUB_STEP_SUMMARY"
+
+  # Run explicitly: PR events from GITHUB_TOKEN may require separate approval.
+  validate:
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    uses: ./.github/workflows/desktop-checks.yml
+    with:
+      ref: ${{ needs.prepare.outputs.base }}
+      package-artifact: engine-packages
+
+  propose:
+    needs: [prepare, validate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Ensure main still matches the tested base
+        env:
+          TESTED_BASE: ${{ needs.prepare.outputs.base }}
+        run: |
+          if [ "$(git rev-parse HEAD)" != "$TESTED_BASE" ]; then
+            echo '::error::main changed during validation. Run Update engine again to test the new base.'
+            exit 1
+          fi
+      - name: Avoid duplicate Dependabot engine PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node scripts/check-engine-prs.mjs
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-packages
+      - name: Create or update the engine PR
+        id: pr
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
+        with:
+          token: ${{ github.token }}
+          branch: maintenance/update-engine
+          base: main
+          add-paths: |
+            package.json
+            package-lock.json
+          commit-message: Update Electron to ${{ needs.prepare.outputs.electron }}
+          title: Update Electron to ${{ needs.prepare.outputs.electron }} (Chromium ${{ needs.prepare.outputs.chrome }})
+          body: |
+            Updates the desktop engine from Electron ${{ needs.prepare.outputs.current_electron }} / Chromium ${{ needs.prepare.outputs.current_chrome }} to Electron ${{ needs.prepare.outputs.electron }} / Chromium ${{ needs.prepare.outputs.chrome }}.
+
+            Pins Electron exactly and prepares app version **${{ needs.prepare.outputs.app_version }}**. Android continues to use the system WebView.
+
+            Typecheck, unit tests, desktop end-to-end tests, and installer builds passed on Windows, macOS, and Linux for these package files and base commit `${{ needs.prepare.outputs.base }}`.
+
+            [Validation and test installers](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) (artifacts retained for 14 days).
+            [Electron release notes](https://releases.electronjs.org/release/v${{ needs.prepare.outputs.electron }})
+
+            Download `installers-windows-latest` to try the Windows installer. Test installers are unsigned and are not published releases.
+
+            Review and merge this PR, then pull main and push tag `v${{ needs.prepare.outputs.app_version }}` to release. Check that the tag is still unused. Nothing is merged, tagged, or published automatically.
+
+            This branch is managed by Update engine; rerunning the workflow refreshes the same PR. If GitHub shows **Approve workflows to run**, approve the normal PR checks before merging.
+      - name: Link the review
+        env:
+          PR_URL: ${{ steps.pr.outputs.pull-request-url }}
+        run: echo "Engine update ready for review - $PR_URL. Test installers are in this run's artifacts." >> "$GITHUB_STEP_SUMMARY"

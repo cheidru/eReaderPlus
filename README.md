@@ -117,9 +117,69 @@ for auto-update) and a signed `eReaderPlus.apk`, and publishes them as a GitHub 
 
 ## Updating the rendering engine
 
-- **Desktop**: each Electron major ships a newer Chromium (about every 8 weeks; security fixes in between).
-  Dependabot opens a PR for new Electron releases, and CI runs the unit and end-to-end tests on all three OSes.
-  Merge the PR and push a version tag (see Releases). Installed apps update through electron-updater. Shipping
-  without warnings needs code-signing certificates (Windows, Apple Developer ID).
+- **Desktop**: use the maintainer-only **Update engine** workflow below. It upgrades Electron together with its
+  bundled Chromium, including Electron patches that leave Chromium unchanged. Installed apps receive the engine
+  through an ordinary app release. Shipping without warnings needs code-signing certificates (Windows, Apple Developer ID).
 - **Android**: the WebView updates itself through Google Play. The app shows a warning with an update link when
   the WebView is older than `MIN_ENGINE_MAJOR` (`src/platform/platform.ts`).
+
+### Maintainer update button
+
+The daily **Engine updates** workflow emails once per newer stable Electron release. Its email links to
+[Actions → Update engine](https://github.com/cheidru/eReaderPlus/actions/workflows/update-engine.yml).
+Choose **Run workflow**, leave the branch at **main**, and run it. Beta and nightly releases are excluded.
+
+The workflow pins Electron exactly in `package.json` and `package-lock.json`, chooses the next unused patch
+version for the app, and tests those files against the starting main commit. It runs typecheck, unit tests,
+desktop end-to-end tests, and installer builds on Windows, macOS, and Linux. The workflow calls the same
+`desktop-checks.yml` used by normal CI; it does not depend on a bot-created PR triggering those tests.
+
+After validation, it creates or refreshes one PR on the managed branch `maintenance/update-engine`. Do not put
+manual edits on that branch: another run refreshes it. If main changes during validation, the run stops and asks
+you to run it again. An already-current engine produces no changes. A failed test or installer build prevents
+the PR from being created or refreshed; the run's logs and diagnostic artifacts explain the failure.
+
+Open the run's **Artifacts**, download `installers-windows-latest`, unzip it, and try `eReaderPlus-Setup.exe`.
+Mac and Linux installers are available too. These are unsigned test installers retained for 14 days; they are
+not published releases. Installing one can update your existing local eReaderPlus installation.
+
+Review and merge the PR, then pull main and push the version tag named in the PR to publish through the existing
+Release workflow. Before tagging, check that the app version and tag are still unused if other changes have
+landed meanwhile. The updater never merges, tags, or publishes automatically.
+
+One-time repository setup: **Settings → Actions → General → Workflow permissions → Allow GitHub Actions to
+create and approve pull requests** must be enabled. The updater requests repository write permissions only for
+its final PR job and needs no personal access token. If GitHub displays **Approve workflows to run** on the PR,
+approve its normal CI checks before merging; the update workflow's own validation has already run.
+
+Dependabot continues to update packaging tools and other dependencies, but `electron` itself is excluded so the
+manual workflow owns engine upgrades. Existing Dependabot PRs may still include Electron: merge or close those
+once before using the tool. It detects such PRs and stops rather than creating a duplicate. Continue reviewing
+Dependabot security alerts as usual; the manual engine tool is responsible for applying Electron updates.
+
+### Local maintainer command
+
+Use Node 24 or newer. A read-only preview works even with uncommitted changes:
+
+```powershell
+npm run update:engine -- --check
+```
+
+To prepare and test an update, start from an up-to-date main checkout with a clean working tree and an `origin`
+remote. Then run:
+
+```powershell
+npm run update:engine
+```
+
+It creates `maintenance/electron-<version>`, updates the two package files, installs dependencies and the Electron
+executable, and runs typecheck, unit tests, and desktop end-to-end tests on your OS. On Linux without a display,
+`xvfb-run` must be installed. Existing branch names are never overwritten. Failures leave the prepared files
+for inspection; the command does not commit, push, or publish. After success, use `npm run dist:win` (or
+`dist:mac` / `dist:linux`) if you want a local installer. Review and commit the package changes before opening a PR.
+
+`--prepare-only` is the workflow's internal mode: it updates only the package files, leaving installation and
+validation to the OS matrix. It does not switch branches. Do not treat this mode as a tested update.
+
+The updater and email scripts live under `scripts/`, and the workflow files live under `.github/`. Neither
+directory is shipped by `electron-builder.yml`; the installed app has no maintainer update controls or credentials.

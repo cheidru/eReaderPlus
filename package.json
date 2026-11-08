@@ -1,7 +1,7 @@
 {
   "name": "ereaderplus",
   "productName": "eReaderPlus",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "homepage": "https://github.com/cheidru/eReaderPlus",
   "description": "Ebook reader rendering books with an up-to-date Chromium engine",
   "private": true,
@@ -9,6 +9,7 @@
   "main": "dist/electron/main.cjs",
   "scripts": {
     "install:electron": "install-electron",
+    "update:engine": "node scripts/update-engine.mjs",
     "build:inject": "node scripts/build-inject.mjs",
     "build:electron": "node scripts/build-electron.mjs",
     "build:web": "npm run build:inject && vite build",
@@ -23,7 +24,7 @@
     "android:sync": "npm run build:web && cap sync android",
     "android:run": "npm run android:sync && cap run android",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run",
+    "test": "vitest run && node --test test/maintainer/update-engine.test.mjs",
     "samples": "node scripts/make-sample-books.mjs",
     "test:e2e": "npm run build && npm run samples && node test/e2e/desktop.e2e.mjs"
   },

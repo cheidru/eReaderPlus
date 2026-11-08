@@ -17,7 +17,7 @@ describe('engine updates', () => {
     expect(compareVersions('44.7', '44.7.0')).toBe(0);
   });
 
-  it('finds the stable release with the newest Chromium, skipping pre-releases', () => {
+  it('finds the newest stable Electron, skipping pre-releases', () => {
     expect(newestStableEngine(feed)).toEqual({ electron: '44.7.2', chrome: '152.0.7977.149' });
   });
 
@@ -26,11 +26,13 @@ describe('engine updates', () => {
     expect(newestStableEngine([null, 'x', { version: 44, chrome: '1' }, { version: '1.0.0', chrome: '<script>' }])).toBeNull();
   });
 
-  it('offers an update only for a newer Chromium', () => {
+  it('offers Electron patches even when Chromium is unchanged, without downgrading either engine', () => {
     const latest = newestStableEngine(feed);
-    expect(engineUpdate('152.0.7977.130', latest)).toEqual(latest);
-    expect(engineUpdate('152.0.7977.149', latest)).toBeNull();
-    expect(engineUpdate('153.0.0.1', latest)).toBeNull();
-    expect(engineUpdate('152.0.7977.130', null)).toBeNull();
+    expect(engineUpdate({ electron: '44.7.0', chrome: '152.0.7977.130' }, latest)).toEqual(latest);
+    expect(engineUpdate({ electron: '44.7.1', chrome: '152.0.7977.149' }, latest)).toEqual(latest);
+    expect(engineUpdate({ electron: '44.7.2', chrome: '152.0.7977.149' }, latest)).toBeNull();
+    expect(engineUpdate({ electron: '44.8.0', chrome: '152.0.7977.130' }, latest)).toBeNull();
+    expect(engineUpdate({ electron: '44.7.1', chrome: '153.0.0.1' }, latest)).toBeNull();
+    expect(engineUpdate({ electron: '44.7.0', chrome: '152.0.7977.130' }, null)).toBeNull();
   });
 });

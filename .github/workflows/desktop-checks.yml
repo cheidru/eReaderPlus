@@ -1,0 +1,68 @@
+name: Desktop checks
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact base commit to test; empty uses the caller's ref
+        type: string
+        default: ''
+      package-artifact:
+        description: Optional package.json and package-lock.json prepared in this run
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - if: inputs.package-artifact != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.package-artifact }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install Electron executable
+        run: npm run install:electron
+      - run: npm run typecheck
+      - run: npm test
+      - name: End-to-end (real Electron window)
+        if: runner.os != 'Linux'
+        run: npm run test:e2e
+      - name: End-to-end (real Electron window, virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:e2e
+      - name: Package test installers
+        run: npx --no-install electron-builder --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.os }}
+          retention-days: 14
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.AppImage
+            release/*.deb
+          if-no-files-found: error
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-diagnostics-${{ matrix.os }}
+          path: test-results/
+          if-no-files-found: ignore

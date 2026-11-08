@@ -1,6 +1,5 @@
 /**
- * Rendering engine updates of the desktop app. Each Electron release ships a Chromium, so a newer Chromium in
- * Electron's release feed means the app should move to that Electron release (and be rebuilt and shipped).
+ * Maintainer engine checks. Electron patch releases matter even when Chromium is unchanged.
  * scripts/check-engine.mjs runs this daily on GitHub and mails the developer; the app itself never checks.
  */
 
@@ -28,7 +27,7 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/** The stable release with the newest Chromium (the newest such Electron on a tie), or null if the feed has none. */
+/** The newest stable Electron and its bundled Chromium, or null if the feed has none. */
 export function newestStableEngine(feed: unknown): EngineRelease | null {
   if (!Array.isArray(feed)) return null;
   let newest: EngineRelease | null = null;
@@ -36,15 +35,21 @@ export function newestStableEngine(feed: unknown): EngineRelease | null {
     if (typeof entry !== 'object' || entry === null) continue;
     const { version, chrome } = entry as Record<string, unknown>;
     if (typeof version !== 'string' || typeof chrome !== 'string' || !STABLE_VERSION.test(version) || !STABLE_VERSION.test(chrome)) continue;
-    const order = newest ? compareVersions(chrome, newest.chrome) || compareVersions(version, newest.electron) : 1;
+    const order = newest ? compareVersions(version, newest.electron) || compareVersions(chrome, newest.chrome) : 1;
     if (order > 0) newest = { electron: version, chrome };
   }
   return newest;
 }
 
-/** `latest`, if it ships a newer Chromium than the app's `currentChrome`. */
-export function engineUpdate(currentChrome: string, latest: EngineRelease | null): EngineRelease | null {
-  return latest && STABLE_VERSION.test(currentChrome) && compareVersions(latest.chrome, currentChrome) > 0 ? latest : null;
+/** Update Electron, including patches with the same Chromium; never downgrade either engine. */
+export function engineUpdate(current: EngineRelease, latest: EngineRelease | null): EngineRelease | null {
+  return latest &&
+    STABLE_VERSION.test(current.electron) &&
+    STABLE_VERSION.test(current.chrome) &&
+    compareVersions(latest.electron, current.electron) > 0 &&
+    compareVersions(latest.chrome, current.chrome) >= 0
+    ? latest
+    : null;
 }
 
 export const releaseNotesUrl = (release: EngineRelease) => `https://releases.electronjs.org/release/v${release.electron}`;
