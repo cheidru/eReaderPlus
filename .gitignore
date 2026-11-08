@@ -1,7 +1,6 @@
 node_modules/
 dist/
 release/
-test/
 test-results/
 public/__ereader__/
 android/app/build/
