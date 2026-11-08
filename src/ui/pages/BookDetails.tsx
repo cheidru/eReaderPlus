@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { loadManifest } from '../../core/import';
-import { formatLabel } from '../../core/shelves';
+import { formatLabel, libraryFormat } from '../../core/shelves';
 import type { BookManifest, LibraryEntry } from '../../core/types';
 import type { Platform } from '../../platform';
 import { Icon } from '../icons';
@@ -104,7 +104,7 @@ export function BookDetails({ platform, entry, books, formatsButton, onBack, onA
                 : `${entry.finished ? 'Finished' : `${percentRead(entry)}%`}, ${dateTime.format(entry.lastOpenedAt)}`}
             </Item>
             <Item label="Format and file">
-              {formatLabel(entry.format)}
+              {formatLabel(libraryFormat(entry))}
               {entry.fileName ? ` · ${entry.fileName}` : ''}
             </Item>
             {location && <Item label="File location">{location}</Item>}

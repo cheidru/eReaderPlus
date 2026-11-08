@@ -1,3 +1,4 @@
+import { extension } from './paths';
 import { ALL_FORMATS, type BookFormat, type LibraryEntry, type LibraryFilter, type SortKey } from './types';
 
 /** Shelves that list books directly. */
@@ -59,7 +60,7 @@ export function inGroup(entry: LibraryEntry, shelf: GroupShelf, group: string): 
     case 'collections':
       return !!entry.collections?.includes(group);
     case 'formats':
-      return entry.format === group;
+      return libraryFormat(entry) === group;
   }
 }
 
@@ -73,6 +74,15 @@ export function booksAt(entries: LibraryEntry[], location: LibraryLocation): Lib
 
 export function formatLabel(format: BookFormat): string {
   return format.toUpperCase();
+}
+
+/** Kindle labels follow the original file extension, even when a .mobi contains KF8 content. */
+export function libraryFormat(entry: LibraryEntry): BookFormat {
+  if (entry.format !== 'mobi' && entry.format !== 'azw3') return entry.format;
+  // Older entries may have only a source path; opaque references fall back to the detected format.
+  const name = entry.fileName || entry.source?.split(/[\\/]/).pop() || '';
+  const ext = extension(name);
+  return ext === 'mobi' || ext === 'azw3' ? ext : entry.format;
 }
 
 /**
@@ -93,7 +103,7 @@ export function groupsOf(entries: LibraryEntry[], shelf: GroupShelf, collectionN
     } else if (shelf === 'collections') {
       for (const name of new Set(entry.collections ?? [])) add(name);
     } else {
-      add(entry.format);
+      add(libraryFormat(entry));
     }
   }
   const label = (key: string) => {
@@ -111,7 +121,7 @@ export function applyFilter(entries: LibraryEntry[], filter: LibraryFilter, sear
   const query = search.trim().toLocaleLowerCase();
   return entries.filter(
     (e) =>
-      isFormatShown(filter, e.format) &&
+      isFormatShown(filter, libraryFormat(e)) &&
       !(filter.hideFinished && e.finished) &&
       (!query ||
         [e.title, ...e.authors, e.series?.name ?? '', e.fileName ?? '', e.source?.split(/[\\/]/).pop() ?? ''].some((text) => text.toLocaleLowerCase().includes(query))),
@@ -125,7 +135,7 @@ export function sortEntries(entries: LibraryEntry[], key: SortKey): LibraryEntry
     title: byTitle,
     author: (a, b) => compareText(a.authors[0] ?? LAST, b.authors[0] ?? LAST) || byTitle(a, b),
     series: (a, b) => compareText(a.series?.name ?? LAST, b.series?.name ?? LAST) || bySeriesIndex(a, b) || byTitle(a, b),
-    format: (a, b) => compareText(a.format, b.format) || byTitle(a, b),
+    format: (a, b) => compareText(libraryFormat(a), libraryFormat(b)) || byTitle(a, b),
     added: (a, b) => b.addedAt - a.addedAt,
     read: (a, b) => b.lastOpenedAt - a.lastOpenedAt,
   };
@@ -171,14 +181,14 @@ export function toggleAllFormats(filter: LibraryFilter): LibraryFilter {
   return withShownFormats(filter, allFormatsShown(filter) ? [] : ALL_FORMATS);
 }
 
-/** The formats a file with this extension can turn out to be (a .mobi file may hold an AZW3 book). */
+/** Library formats for each extension; ambiguous .azw files use their detected format. */
 const EXTENSION_FORMATS: Record<string, BookFormat[]> = {
   epub: ['epub'],
   kepub: ['epub'],
   fb2: ['fb2'],
   fbz: ['fb2'],
   cbz: ['cbz'],
-  mobi: ['mobi', 'azw3'],
+  mobi: ['mobi'],
   azw: ['mobi', 'azw3'],
   azw3: ['azw3'],
   djvu: ['djvu'],

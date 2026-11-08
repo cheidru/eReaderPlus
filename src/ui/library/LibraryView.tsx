@@ -5,6 +5,7 @@ import {
   applyFilter,
   booksAt,
   formatLabel,
+  libraryFormat,
   groupsOf,
   isFilterActive,
   isFormatShown,
@@ -343,7 +344,10 @@ interface FormatListProps {
 /** Every supported format, ticked when its books are shown: the selection applies to the whole app. */
 function FormatList({ entries, prefs, onPrefsChange, onShowFormat }: FormatListProps) {
   const counts = new Map<BookFormat, number>();
-  for (const entry of entries) counts.set(entry.format, (counts.get(entry.format) ?? 0) + 1);
+  for (const entry of entries) {
+    const format = libraryFormat(entry);
+    counts.set(format, (counts.get(format) ?? 0) + 1);
+  }
   const all = allFormatsShown(prefs.filter);
   return (
     <>

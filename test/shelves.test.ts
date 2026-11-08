@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyFilter, booksAt, groupsOf, isFilterActive, isFormatShown, isReading, NO_AUTHOR, shownExtensions, sortAt, sortEntries, toggleAllFormats, toggleFormat } from '../src/core/shelves';
+import { applyFilter, booksAt, formatLabel, groupsOf, isFilterActive, isFormatShown, isReading, libraryFormat, NO_AUTHOR, shownExtensions, sortAt, sortEntries, toggleAllFormats, toggleFormat } from '../src/core/shelves';
 import { ALL_FORMATS } from '../src/core/types';
 import type { LibraryEntry } from '../src/core/types';
 import { fileLocation } from '../src/ui/library/shelfInfo';
@@ -112,10 +112,38 @@ describe('shelves', () => {
     expect(toggleAllFormats({ formats: ['pdf'], hideFinished: true })).toEqual({ formats: [], hideFinished: true });
   });
 
-  it('maps file extensions to the formats shown, a .mobi file counting as MOBI or AZW3', () => {
+  it('uses the source extension for Kindle labels, groups, filters and sorting of existing entries', () => {
+    const combo = entry('A combined book', { format: 'azw3', fileName: 'combined.MOBI' });
+    const azw3 = entry('Z Kindle book', { format: 'azw3', fileName: 'book.azw3' });
+    const legacy = entry('Older import', { format: 'azw3', source: 'C:\\Books\\older.mobi' });
+    const kindle = [combo, azw3, legacy];
+    expect(formatLabel(libraryFormat(combo))).toBe('MOBI');
+    expect(formatLabel(libraryFormat(azw3))).toBe('AZW3');
+    expect(groupsOf(kindle, 'formats')).toEqual([
+      { key: 'azw3', label: 'AZW3', count: 1 },
+      { key: 'mobi', label: 'MOBI', count: 2 },
+    ]);
+    expect(booksAt(kindle, { shelf: 'formats', group: 'mobi' })).toEqual([combo, legacy]);
+    expect(applyFilter(kindle, { formats: ['mobi'], hideFinished: false })).toEqual([combo, legacy]);
+    expect(applyFilter(kindle, { formats: ['azw3'], hideFinished: false })).toEqual([azw3]);
+    expect(sortEntries(kindle, 'format')).toEqual([azw3, combo, legacy]);
+    // Display classification does not alter the encoding used for imports and duplicate detection.
+    expect(combo.format).toBe('azw3');
+  });
+
+  it('falls back to detected formats when the original Kindle extension is unknown or ambiguous', () => {
+    expect(libraryFormat(entry('unknown', { format: 'azw3' }))).toBe('azw3');
+    expect(libraryFormat(entry('opaque', { format: 'azw3', source: 'content://downloads/123' }))).toBe('azw3');
+    expect(libraryFormat(entry('azw', { format: 'azw3', fileName: 'book.azw' }))).toBe('azw3');
+    expect(libraryFormat(entry('renamed EPUB', { format: 'epub', fileName: 'book.mobi' }))).toBe('epub');
+    expect(libraryFormat(entry('name wins', { format: 'azw3', fileName: 'book.mobi', source: '/books/book.azw3' }))).toBe('mobi');
+  });
+
+  it('maps file extensions to the formats shown, a .mobi file counting as MOBI', () => {
     const extensions = ['epub', 'kepub', 'mobi', 'azw3', 'pdf', 'djv'];
     expect(shownExtensions({ formats: [], hideFinished: false }, extensions)).toEqual(extensions);
-    expect(shownExtensions({ formats: ['epub', 'azw3'], hideFinished: false }, extensions)).toEqual(['epub', 'kepub', 'mobi', 'azw3']);
+    expect(shownExtensions({ formats: ['epub', 'azw3'], hideFinished: false }, extensions)).toEqual(['epub', 'kepub', 'azw3']);
+    expect(shownExtensions({ formats: ['mobi'], hideFinished: false }, extensions)).toEqual(['mobi']);
     expect(shownExtensions({ formats: ['djvu'], hideFinished: false }, extensions)).toEqual(['djv']);
   });
 

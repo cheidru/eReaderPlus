@@ -1,6 +1,6 @@
 import { useState, type MouseEvent } from 'react';
 import type { ImportPreview } from '../../core/import';
-import { formatLabel, isReading } from '../../core/shelves';
+import { formatLabel, isReading, libraryFormat } from '../../core/shelves';
 import type { LibraryEntry, LibraryLayout } from '../../core/types';
 import type { MenuAnchor } from '../Dialogs';
 import { bookUrl, type Platform } from '../../platform';
@@ -94,7 +94,7 @@ export function BookCard({ platform, entry, books, onMenu }: ItemProps) {
           {entry.authors.length > 0 && <span className="book-author">{entry.authors.join(', ')}</span>}
           {entry.series && <span className="book-author">{seriesLabel(entry.series)}</span>}
           <span className="book-meta">
-            {formatLabel(entry.format)}
+            {formatLabel(libraryFormat(entry))}
             {entry.finished ? ' · Finished' : percent > 0 ? ` · ${percent}%` : ''}
           </span>
         </span>
@@ -126,7 +126,7 @@ export function ShelfTile({ platform, entry, books, onMenu }: ItemProps) {
       <div className="tile-footer">
         <span className="tile-status" title={entry.finished ? 'Finished' : undefined}>
           {entry.finished && <Icon name="check" className="tile-check" />}
-          {formatLabel(entry.format)}
+          {formatLabel(libraryFormat(entry))}
           {!entry.finished && entry.lastOpenedAt === 0 && <span className="tile-badge">New</span>}
         </span>
         <button type="button" className="icon-button tile-more" aria-label={`More actions for ${entry.title}`} onClick={(e) => onMenu(e.currentTarget, entry)}>
