@@ -76,6 +76,7 @@ use a key derived from the file itself, like EPUB font obfuscation, and are open
 
 ```sh
 npm install
+npm run install:electron
 npm run dev:desktop     # Vite dev server + Electron
 npm test                # unit tests (parsers, injection, message validation)
 npm run test:e2e        # builds, generates samples/, drives the real Electron app with Playwright

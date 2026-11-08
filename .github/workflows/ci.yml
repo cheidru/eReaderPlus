@@ -19,6 +19,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Install Electron executable
+        run: npm run install:electron
       - run: npm run typecheck
       - run: npm test
       - name: End-to-end (real Electron window)

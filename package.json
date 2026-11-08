@@ -1,13 +1,14 @@
 {
   "name": "ereaderplus",
   "productName": "eReaderPlus",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "homepage": "https://github.com/cheidru/eReaderPlus",
   "description": "Ebook reader rendering books with an up-to-date Chromium engine",
   "private": true,
   "type": "module",
   "main": "dist/electron/main.cjs",
   "scripts": {
+    "install:electron": "install-electron",
     "build:inject": "node scripts/build-inject.mjs",
     "build:electron": "node scripts/build-electron.mjs",
     "build:web": "npm run build:inject && vite build",
