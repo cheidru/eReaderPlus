@@ -1,7 +1,7 @@
 {
   "name": "ereaderplus",
   "productName": "eReaderPlus",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "homepage": "https://github.com/cheidru/eReaderPlus",
   "description": "Ebook reader rendering books with an up-to-date Chromium engine",
   "private": true,
@@ -48,7 +48,7 @@
     "@types/react-dom": "^19.3.0",
     "@types/yauzl": "^3.4.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "electron": "^44.5.1",
+    "electron": "45.2.3",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "fflate": "^0.8.3",
