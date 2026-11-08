@@ -221,6 +221,46 @@ process.on('uncaughtException', (error) => {
     assert.ok(spread.paragraph < spread.half, JSON.stringify(spread));
     assert.equal(single, 'auto');
   });
+
+  // Fully filled columns catch both a clipped final margin and accidental extra pages from a spacer.
+  // Odd spreads also need room for their empty second page; RTL reserves that room on the left.
+  for (const direction of ['ltr', 'rtl']) {
+    for (const spreadOn of [true, false]) {
+      await twoPages.setChecked(spreadOn);
+      for (const columns of [1, 2, 3, 4]) {
+        await frame2.evaluate(({ direction, columns }) => {
+          document.documentElement.style.direction = direction;
+          const style = getComputedStyle(document.documentElement);
+          const height = innerHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+          document.body.replaceChildren(...Array.from({ length: columns }, (_, i) => {
+            const p = document.createElement('p');
+            p.textContent = `Page ${i + 1}`;
+            p.style.cssText = `margin:0;height:${height}px;break-inside:avoid;break-before:${i ? 'column' : 'auto'}`;
+            return p;
+          }));
+          window.dispatchEvent(new Event('resize'));
+        }, { direction, columns });
+        await frame2.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        await shownFrame(page).evaluate(el => el.contentWindow.postMessage({ tag: 'ereader', type: 'goto', target: { kind: 'end' } }, '*'));
+        await page.waitForTimeout(100);
+        const end = await frame2.evaluate(() => {
+          const r = document.body.lastElementChild.getBoundingClientRect();
+          return { x: scrollX, width: innerWidth, extent: document.scrollingElement.scrollWidth,
+            margin: parseFloat(getComputedStyle(document.documentElement).paddingLeft), left: r.left, right: r.right };
+        });
+        check(`final-page margins: ${direction}, ${spreadOn ? 'spread' : 'single'}, ${columns} columns`, () => {
+          const pages = Math.ceil(columns / (spreadOn ? 2 : 1));
+          const stride = end.width / (spreadOn ? 2 : 1);
+          const slot = spreadOn ? (columns - 1) % 2 : 0;
+          const left = direction === 'ltr' ? slot * stride + end.margin : end.width - (slot + 1) * stride + end.margin;
+          assert.equal(end.extent, pages * end.width, JSON.stringify(end));
+          assert.ok(Math.abs(end.x - (direction === 'rtl' ? -1 : 1) * (pages - 1) * end.width) < 1, JSON.stringify(end));
+          assert.ok(Math.abs(end.left - left) < 1, JSON.stringify(end));
+          assert.ok(Math.abs(end.right - (left + stride - 2 * end.margin)) < 1, JSON.stringify(end));
+        });
+      }
+    }
+  }
   await page.waitForTimeout(600); // let the debounced progress save land
   await app.close();
 }

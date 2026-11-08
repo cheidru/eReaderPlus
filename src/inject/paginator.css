@@ -38,6 +38,19 @@ html.ereader-paginated.ereader-spread {
   column-count: 2 !important;
 }
 
+/* Chromium omits the trailing padding from overflowing columns. Reserve the whole last viewport,
+   including an empty second column in an odd spread, so the final page turn isn't clamped short.
+   This box is out of flow: it must not create an extra column when the text fills a page exactly. */
+html.ereader-paginated::after {
+  content: '' !important;
+  position: absolute !important;
+  top: 0 !important;
+  inset-inline-start: max(0px, calc(var(--ereader-scroll-width, 0px) - 1px)) !important;
+  width: 1px !important;
+  height: 1px !important;
+  pointer-events: none !important;
+}
+
 html.ereader-paginated body {
   margin: 0 !important;
   max-width: none !important;

@@ -61,9 +61,12 @@ import { createTextScaler } from './text-scale';
 
   function measure() {
     if (mode() === 'paginated') {
+      // Measure only the book, not the scroll space reserved by the previous layout.
+      root.style.setProperty('--ereader-scroll-width', '0px');
       const spreads = scroller().scrollWidth / window.innerWidth;
       // An odd number of columns leaves the last spread half full: it still counts as a page.
       pageCount = Math.max(1, root.classList.contains('ereader-spread') ? Math.ceil(spreads - 0.05) : Math.round(spreads));
+      root.style.setProperty('--ereader-scroll-width', `${pageCount * window.innerWidth}px`);
     } else {
       pageCount = 1;
     }
