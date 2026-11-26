@@ -27,7 +27,16 @@ async function launch(book) {
 /** The book frame on screen; the documents next to it are loaded ahead in frames out of sight. */
 const shownFrame = (page) => page.locator('.reader-frame:not(.reader-frame-hidden)');
 
-async function bookFrame(page, file) {
+async function bookFrame(page, file, { preloaded = false } = {}) {
+  // A preloaded document is initialized before it is shown. Interacting with it then can race
+  // navigation's saved-zoom message, which resets a pinch and turns the following pan into a swipe.
+  if (!preloaded) {
+    await page.waitForFunction(
+      (file) => document.querySelector('.reader-frame:not(.reader-frame-hidden)')?.getAttribute('src')?.includes(file),
+      file,
+      { timeout: 10000 },
+    );
+  }
   for (let i = 0; i < 100; i++) {
     const frame = page.frames().find((f) => f.url().startsWith('book://') && f.url().includes(file));
     if (frame) {
@@ -334,14 +343,15 @@ process.on('uncaughtException', (error) => {
   await bookFrame(page, '0001.xhtml');
   await page.keyboard.press('ArrowRight');
   const frame = await bookFrame(page, '0002.xhtml');
-  check('CBZ renders and turns pages', () => assert.ok(frame));
+  const comicPage = await shownFrame(page).getAttribute('src');
+  check('CBZ renders and turns pages', () => assert.match(comicPage, /0002\.xhtml$/));
   const fixedView = () =>
     frame.evaluate(() => {
       const style = document.documentElement.style;
       return { zoom: Number(document.documentElement.dataset.ereaderZoom ?? 1), x: parseFloat(style.getPropertyValue('--ereader-fixed-x')) };
     });
   await frame.evaluate(touch, [[[400, 300], [500, 300]], [[300, 300], [600, 300]]]);
-  await page.waitForTimeout(400);
+  await frame.waitForFunction(() => Number(document.documentElement.dataset.ereaderZoom) > 2.95);
   const pinchedIn = await fixedView();
   await frame.evaluate(touch, [[[500, 300]], [[350, 310]]]);
   await page.waitForTimeout(400);
@@ -352,14 +362,14 @@ process.on('uncaughtException', (error) => {
     assert.match(frame.url(), /0002\.xhtml$/);
   });
   await frame.evaluate(touch, [[[300, 300], [600, 300]], [[400, 300], [500, 300]]]);
-  await page.waitForTimeout(400);
+  await frame.waitForFunction(() => Math.abs(Number(document.documentElement.dataset.ereaderZoom) - 1) < 0.05);
   await page.screenshot({ path: path.join(shots, '8-cbz.png') });
   const title = await page.locator('.reader-title').textContent();
   check('ComicInfo title used', () => assert.equal(title, 'Sample Comic #1'));
-  const ahead = await bookFrame(page, '0003.xhtml');
+  const ahead = await bookFrame(page, '0003.xhtml', { preloaded: true });
   const loadedAt = await ahead.evaluate(() => performance.timeOrigin);
   await page.keyboard.press('ArrowRight');
-  await page.waitForTimeout(150);
+  await bookFrame(page, '0003.xhtml');
   const turnedTo = await shownFrame(page).getAttribute('src');
   const shownAt = await ahead.evaluate(() => performance.timeOrigin);
   const behind = page.frames().some((f) => f.url().endsWith('0002.xhtml'));
